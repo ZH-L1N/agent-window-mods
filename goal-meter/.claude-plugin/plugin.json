@@ -1,0 +1,19 @@
+{
+  "name": "goal-meter",
+  "version": "0.1.1",
+  "description": "A GOAL band above the prompt that reads Claude's own task list: the goal's name, a 6-cell bar of tasks done, percent, time, ETA and the task running now; a /goals pane with every task and the last five goals.",
+  "author": {
+    "name": "Zehui Lin"
+  },
+  "license": "MIT",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "band": {
+      "type": "string",
+      "title": "GOAL band above the prompt",
+      "description": "on: the GOAL row while the main loop has a task list, and the done toast; off: no row and no toast (the /goals pane still works). /goals on|off overrides this.",
+      "default": "on",
+      "options": ["on", "off"]
+    }
+  }
+}

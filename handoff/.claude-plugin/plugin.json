@@ -1,0 +1,32 @@
+{
+  "name": "handoff",
+  "version": "0.1.1",
+  "description": "A HANDOFF band above the prompt: the context bar stacked by /context category, fill against the compaction point, and at the threshold a save-now button that writes HANDOFF.md, then clear & continue and a resume offer in the next session.",
+  "author": {
+    "name": "Zehui Lin"
+  },
+  "license": "MIT",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "band": {
+      "type": "string",
+      "title": "HANDOFF band above the prompt",
+      "description": "on: the HANDOFF row; off: no row (the /handoff-line command still works). /handoff-line on|off overrides this.",
+      "default": "on",
+      "options": ["on", "off"]
+    },
+    "mode": {
+      "type": "string",
+      "title": "At the threshold",
+      "description": "ask: the row turns red and offers save now; auto: a handoff is saved by itself at the crossing. /handoff-line mode overrides this.",
+      "default": "ask",
+      "options": ["ask", "auto"]
+    },
+    "threshold": {
+      "type": "number",
+      "title": "Threshold (% of the compaction point)",
+      "description": "The fill, as a percent of where auto-compact fires, at which the row turns red and offers a handoff (50 to 95). /handoff-line threshold overrides this.",
+      "default": 80
+    }
+  }
+}

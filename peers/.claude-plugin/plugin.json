@@ -1,0 +1,19 @@
+{
+  "name": "peers",
+  "version": "0.2.0",
+  "description": "A herdr peer alarm and board: every 30 seconds it reads the agents of this herdr workspace and toasts when one is blocked, when one finishes, and ALL DONE once every peer is idle after work (silent unless sound is on); a peers board pane lists every peer, blocked first in amber, with its HERDR-ORCH request, round, deadline countdown and result file for the spokes this session briefed. /peer-alarm list | board [close] | on | off | sound on|off.",
+  "author": {
+    "name": "Zehui Lin"
+  },
+  "license": "MIT",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "sound": {
+      "type": "string",
+      "title": "Play a sound with the alarms",
+      "description": "off: toasts only (default); on: two low beeps when a peer is blocked and a rising chime at ALL DONE. /peer-alarm sound on|off overrides this.",
+      "default": "off",
+      "options": ["off", "on"]
+    }
+  }
+}

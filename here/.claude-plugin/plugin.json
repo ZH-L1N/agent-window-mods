@@ -1,0 +1,19 @@
+{
+  "name": "here",
+  "version": "0.1.0",
+  "description": "A HERE band above the prompt that says where the session is, with no model call by default (option rewrite=haiku makes one per answer): the goal (goal-meter's goal name, else the first line of the prompt that started the open task list), what Claude is doing now (the last tool call's verb and path, or the spinner word while it thinks) and the questions the last reply asked you; /here prints the three, /here on | off.",
+  "author": {
+    "name": "Zehui Lin"
+  },
+  "license": "MIT",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "rewrite": {
+      "type": "string",
+      "title": "Rewrite the row with Haiku",
+      "description": "off: the row is built from the tool calls, the spinner and the reply's question lines, no model call (default); haiku: one Haiku call after each main-loop answer rewrites the three parts from the reply and the task list.",
+      "default": "off",
+      "options": ["off", "haiku"]
+    }
+  }
+}

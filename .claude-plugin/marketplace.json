@@ -1,0 +1,213 @@
+{
+  "name": "zehui-mods",
+  "owner": {
+    "name": "ZH-L1N"
+  },
+  "interface": {
+    "displayName": "Zehui's Claude Code mods"
+  },
+  "metadata": {
+    "description": "Personal Claude Code mods: UI bands, panes and tool-call guards, read from this folder."
+  },
+  "description": "Personal Claude Code mods: UI bands, panes and tool-call guards, read from this folder.",
+  "version": "0.1.0",
+  "plugins": [
+    {
+      "name": "token-weather",
+      "source": "./token-weather",
+      "description": "A live forecast of the context window above the prompt: PLAN chip, weather glyph, fill percentage, a chart of the last turns, session cost, rate-limit windows, today's tokens and the month's usage; publishes the context breakdown for the handoff mod's row.",
+      "author": {
+        "name": "Claude Code DevRel"
+      },
+      "repository": "https://github.com/anthropics/claude-code-playground",
+      "license": "Apache-2.0",
+      "category": "productivity",
+      "tags": [
+        "mod",
+        "context",
+        "cost"
+      ]
+    },
+    {
+      "name": "agents",
+      "source": "./agents",
+      "description": "Live subagents, background shells, Monitor watches and cron timers: an AGENTS band above the prompt (main model, each run with its model or command, task and status, watches with time left, crons with their next fire, skills fired, ☕ while idle sleep is held), an /agents-info pane with a Who view (cost, tokens, time and a pixel mascot per run, picked from a pool for its state), a Code view (the files touched, as a map of nodes in edit order) and a Peers view (the other agents of this herdr workspace, this session's HERDR-ORCH spokes grouped under their requests), a toast when one finishes and ALL DONE when the last one does.",
+      "author": {
+        "name": "Zehui Lin"
+      },
+      "license": "MIT",
+      "category": "productivity",
+      "tags": [
+        "mod",
+        "subagents",
+        "cost"
+      ]
+    },
+    {
+      "name": "handoff",
+      "source": "./handoff",
+      "description": "A HANDOFF band above the prompt: the context bar stacked by /context category and the fill against the compaction point; at the threshold a save-now button writes HANDOFF.md, then clear & continue and a resume offer in the next session. /handoff-line.",
+      "author": {
+        "name": "Zehui Lin"
+      },
+      "license": "MIT",
+      "category": "productivity",
+      "tags": [
+        "mod",
+        "context",
+        "handoff"
+      ]
+    },
+    {
+      "name": "cache-clock",
+      "source": "./cache-clock",
+      "description": "A CACHE band above the prompt: a countdown of the prompt cache's window (6-cell bar, traffic-light colours), % reused, tokens cached and the estimated rewrite cost when it goes cold; a Compact button and /cache-clock status with the session's reads, writes and dollars saved.",
+      "author": {
+        "name": "Zehui Lin"
+      },
+      "license": "MIT",
+      "category": "productivity",
+      "tags": [
+        "mod",
+        "cache",
+        "cost"
+      ]
+    },
+    {
+      "name": "goal-meter",
+      "source": "./goal-meter",
+      "description": "A GOAL band above the prompt that reads Claude's own task list: the goal's name, a 6-cell bar of tasks done, percent, time, ETA and the task running now; a /goals pane with every task and the last five goals.",
+      "author": {
+        "name": "Zehui Lin"
+      },
+      "license": "MIT",
+      "category": "productivity",
+      "tags": [
+        "mod",
+        "tasks",
+        "progress"
+      ]
+    },
+    {
+      "name": "here",
+      "source": "./here",
+      "description": "A HERE band above the prompt that says where the session is, with no model call by default: goal-meter's goal name, what Claude is doing now (the last tool call's verb and path, or the spinner word while it thinks) and the questions the last reply asked you; /here prints the three, /here on | off; option rewrite=haiku.",
+      "author": {
+        "name": "Zehui Lin"
+      },
+      "license": "MIT",
+      "category": "productivity",
+      "tags": [
+        "mod",
+        "status",
+        "where-am-i"
+      ]
+    },
+    {
+      "name": "next",
+      "source": "./next",
+      "description": "A NEXT band above the prompt with 2 or 3 short prompts you would likely send next, from one Haiku (or Sonnet) call over the last reply and the task list: after every long answer while no subagent runs (option auto, default on), or on /next; 1 to 3 (framed buttons or /next <n>) put one in the prompt box, nothing sent; 0 dismisses; hidden while a turn runs, cleared when you send a prompt.",
+      "author": {
+        "name": "Zehui Lin"
+      },
+      "license": "MIT",
+      "category": "productivity",
+      "tags": [
+        "mod",
+        "suggestions",
+        "next-steps"
+      ]
+    },
+    {
+      "name": "images",
+      "source": "./images",
+      "description": "An IMAGES band above the prompt with a tile for each [Image #n] tag in the prompt box, the tag and the tile size beneath, gone when the tag leaves the box; tiles are placeholders (the engine gives a plugin no pasted image bytes before the prompt is sent). Option size 16 | 24 | 32 rows; /images on | off.",
+      "author": {
+        "name": "Zehui Lin"
+      },
+      "license": "MIT",
+      "category": "productivity",
+      "tags": [
+        "mod",
+        "images",
+        "prompt"
+      ]
+    },
+    {
+      "name": "sys",
+      "source": "./sys",
+      "description": "A SYS band above the prompt: CPU load, RAM in use and battery with 6-cell bars and traffic-light colours, read every 5 seconds while a terminal shows it; a btop button that opens btop in a herdr pane below, and /sys on | off | now | btop.",
+      "author": {
+        "name": "Zehui Lin"
+      },
+      "license": "MIT",
+      "category": "productivity",
+      "tags": [
+        "mod",
+        "system",
+        "monitor"
+      ]
+    },
+    {
+      "name": "zh",
+      "source": "./zh",
+      "description": "/zh translates the last assistant reply (or the n-th back) into Simplified Chinese with Haiku or Sonnet and shows it in a pane, code, paths, commands and names kept exactly; prev, next and close buttons with command twins, the last three translations kept.",
+      "author": {
+        "name": "Zehui Lin"
+      },
+      "license": "MIT",
+      "category": "productivity",
+      "tags": [
+        "mod",
+        "translation",
+        "chinese"
+      ]
+    },
+    {
+      "name": "web",
+      "source": "./web",
+      "description": "/web opens a link in terminal-browser in a herdr pane below (the last link of Claude's reply by default); the deferred web_read tool reads the open page as a bounded capture (title, origin and path, main text cut to 20,000 characters, first 50 links), asking once per new site.",
+      "author": {
+        "name": "Zehui Lin"
+      },
+      "license": "MIT",
+      "category": "productivity",
+      "tags": [
+        "mod",
+        "browser",
+        "herdr"
+      ]
+    },
+    {
+      "name": "peers",
+      "source": "./peers",
+      "description": "A herdr peer alarm and board: every 30 seconds it reads the agents of this herdr workspace and toasts when one is blocked, when one finishes, and ALL DONE once every peer is idle after work (silent unless sound is on; two bundled clips); /peer-alarm board opens a pane with one row per peer, blocked first in amber, and for the spokes this session briefed their HERDR-ORCH request, round, deadline countdown and result file. /peer-alarm list | board [close] | on | off | sound on|off.",
+      "author": {
+        "name": "Zehui Lin"
+      },
+      "license": "MIT",
+      "category": "productivity",
+      "tags": [
+        "mod",
+        "herdr",
+        "agents"
+      ]
+    },
+    {
+      "name": "blast-radius",
+      "source": "./blast-radius",
+      "description": "Holds a risky shell command (rm -rf, git reset --hard, git clean, force push, migrations) and shows what it would change, with Proceed and Cancel. Fail-closed fork with a 2-minute hold and BLAST_RADIUS_OFF=1 opt-out.",
+      "author": {
+        "name": "Claude Code DevRel"
+      },
+      "repository": "https://github.com/anthropics/claude-code-playground",
+      "license": "Apache-2.0",
+      "category": "productivity",
+      "tags": [
+        "mod",
+        "safety",
+        "guard"
+      ]
+    }
+  ]
+}

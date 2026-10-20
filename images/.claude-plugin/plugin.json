@@ -1,0 +1,19 @@
+{
+  "name": "images",
+  "version": "0.1.0",
+  "description": "An IMAGES band above the prompt with a tile per [Image #n] tag in the prompt box, the tag and the tile's size beneath; tiles leave when the tag leaves the box. The engine does not hand a plugin a pasted image's bytes before the prompt is sent, so each tile is a placeholder (no preview). /images on | off.",
+  "author": {
+    "name": "Zehui Lin"
+  },
+  "license": "MIT",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "size": {
+      "type": "string",
+      "title": "Tile height in rows",
+      "description": "16, 24 (default) or 32 terminal rows; a tile is twice as many columns wide (48 by 24 at the default). Shrunk to fit the band's height and width.",
+      "default": "24",
+      "options": ["16", "24", "32"]
+    }
+  }
+}

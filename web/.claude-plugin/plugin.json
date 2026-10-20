@@ -1,0 +1,19 @@
+{
+  "name": "web",
+  "version": "0.1.0",
+  "description": "/web opens a link in terminal-browser in a herdr pane below (the last link of Claude's reply by default); the web_read tool lets Claude read the open page as a bounded capture (title, origin and path, main text, first 50 links), asking once per new site.",
+  "author": {
+    "name": "Zehui Lin"
+  },
+  "license": "MIT",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "split": {
+      "type": "string",
+      "title": "Where /web opens the browser pane",
+      "description": "down: a herdr split below this pane (default); right: a split to the right.",
+      "default": "down",
+      "options": ["down", "right"]
+    }
+  }
+}

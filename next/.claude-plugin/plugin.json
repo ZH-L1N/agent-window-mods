@@ -1,0 +1,26 @@
+{
+  "name": "next",
+  "version": "0.1.0",
+  "description": "A NEXT band above the prompt with 2 or 3 short prompts you would likely send next, from one Haiku (or Sonnet) call over the last reply and the task list: after each long answer, or on /next; 1 to 3 put one in the prompt box (nothing is sent), 0 dismisses; hidden while a turn runs, cleared when you send a prompt.",
+  "author": {
+    "name": "Zehui Lin"
+  },
+  "license": "MIT",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "auto": {
+      "type": "string",
+      "title": "Suggest after every long answer",
+      "description": "on: after each main-loop answer over 300 characters, with no subagent still running, one model call suggests the next prompts (default); off: only when you run /next.",
+      "default": "on",
+      "options": ["on", "off"]
+    },
+    "model": {
+      "type": "string",
+      "title": "Suggestion model",
+      "description": "haiku: fast and cheap (default); sonnet: slower, reads long replies better. Used by /next and the automatic suggestions.",
+      "default": "haiku",
+      "options": ["haiku", "sonnet"]
+    }
+  }
+}

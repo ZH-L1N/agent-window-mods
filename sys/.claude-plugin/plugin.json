@@ -1,0 +1,19 @@
+{
+  "name": "sys",
+  "version": "0.1.1",
+  "description": "A SYS band above the prompt: CPU load, RAM in use and battery, each with a 6-cell bar and traffic-light colours, read every 5 seconds; a btop button that opens btop in a herdr pane below, and /sys.",
+  "author": {
+    "name": "Zehui Lin"
+  },
+  "license": "MIT",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "band": {
+      "type": "string",
+      "title": "SYS band above the prompt",
+      "description": "on: the SYS row, read every 5 seconds while a terminal shows it; off: no row and no reading (/sys now and btop still work). /sys on|off overrides this.",
+      "default": "on",
+      "options": ["on", "off"]
+    }
+  }
+}

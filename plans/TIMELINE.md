@@ -1,0 +1,26 @@
+# Timeline
+- 2026-10-19 14:20 | blast-radius 0.1.0+zehui | shipped | fork installed user-scope from zehui-mods: fail-closed, 2-min hold, no 1-key approve, all segments measured, BLAST_RADIUS_OFF opt-out
+- 2026-10-19 15:05 | blast-radius 0.1.0+zehui | verified | live test in herdr split passed: hold, 2-min timeout, Cancel (Enter/2), Proceed (Tab+Enter); focused pane, framed buttons, ask-dialog fallback
+- 2026-10-19 19:40 | agents 0.1.0 | shipped | own agents mod replaces savvy-progress: deck-style AGENTS band, mascot pane (Claude Mascot Pack, half-block Raster), ▰▱ bars, spinner; live-checked with 3 subagents
+- 2026-10-19 19:40 | token-weather 0.1.0+zehui | shipped | PLAN chip, 20-cell stacked context bar with top-3 categories, month usage (store), compact re-read; live-checked
+- 2026-10-19 19:45 | savvy-progress | retired | plugin uninstalled, folder removed, marketplace and README rows dropped
+- 2026-10-19 21:50 | handoff 0.1.0 | shipped | ⇄ HANDOFF row takes the stacked context bar, percent and top-3 from PLAN; save now / clear & continue / resume; /handoff-line; live-checked
+- 2026-10-19 21:50 | cache-clock 0.1.0 | shipped | ● CACHE row: 60-min cache countdown, % reused, cached tokens, rewrite estimate, Compact button, /cache-clock; live-checked
+- 2026-10-19 21:50 | goal-meter 0.1.0 | shipped | ◆ GOAL row from the task list (TodoWrite/TaskCreate/TaskUpdate), ETA, done toast, /goals pane; live-checked
+- 2026-10-19 21:50 | token-weather 0.1.0+zehui | shipped | local changes 6-9: context bar moved out, terminal only, text-form weather glyphs, chip padded; live-checked
+- 2026-10-19 21:50 | agents 0.2.0 | shipped | background shell entries and cards (terminal-window mascot, codex fuzzies), numbered stub buttons, finish toasts, chip padded; live-checked with a 90 s shell and a subagent
+- 2026-10-19 22:25 | agents 0.2.1 | shipped | keepEnded option (default 10), c: clear done button and /agents-info clear; 69 tests
+- 2026-10-20 00:30 | sys 0.1.0 | shipped | ▣ SYS row: CPU / RAM / battery from sysctl, vm_stat, pmset every 5 s; [btop] and /sys btop open btop-mini in a herdr split; live-checked
+- 2026-10-20 00:30 | token-weather 0.1.0+zehui | shipped | local change 10: today's tokens on the PLAN row (store day keys); live-checked
+- 2026-10-20 00:30 | zh 0.1.0 | shipped | /zh translates the n-th last reply to Simplified Chinese with Haiku in a 译文 pane (prev/next/close, last three kept); live-checked
+- 2026-10-20 00:30 | web 0.1.0 | shipped | /web <url> opens terminal-browser in a herdr split; web_read tool (deferred) returns a bounded capture after ui-selector's contract with a one-time trust ask; /web close, trusted, forget; live-checked (web_read pending)
+- 2026-10-20 00:30 | peers 0.1.0 | shipped | herdr peer alarm: toasts on blocked / finished / ALL DONE for the current workspace, silent by default; /peer-alarm list, on, off, sound; live-checked
+- 2026-10-20 03:40 | token-weather 0.1.0+zehui | shipped | local change 11: stack-order convention (zm-20-plan); today's tokens (10) live-checked
+- 2026-10-20 03:40 | agents 0.3.0 | shipped | watchers and crons in band and pane, caffeinate hold, ALL DONE toast, Code view (edit-order boxes, numstat, d → /diff, scope); stack order; live-checked
+- 2026-10-20 03:40 | peers 0.2.0 | shipped | /peer-alarm board pane: peers with state and time, spokes with request, round, deadline, result.md; live-checked
+- 2026-10-20 03:40 | here 0.1.0 | shipped | ◉ HERE row: goal · now · you, no model by default; live-checked
+- 2026-10-20 03:40 | next 0.1.0 | shipped | ➜ NEXT row: haiku suggestions, auto on, /next <n> fills the prompt box; live-checked
+- 2026-10-20 03:40 | cache-clock, handoff, goal-meter, sys 0.1.1 | shipped | stack-order convention (sorted zm rows); live-checked
+- 2026-10-20 03:40 | images 0.1.0 | built, not installed | engine exposes no pasted-image bytes before send; placeholder tiles only
+- 2026-10-20 06:10 | agents 0.4.0 | shipped | Peers view (p) grouped by HERDR-ORCH request, mascot pools per state (38 poses); 110 tests
+- 2026-10-20 06:15 | all zehui mods | cache refreshed | plugin caches re-copied via `claude plugin update` after version bumps (token-weather 0.1.11); new sessions had been loading stale copies

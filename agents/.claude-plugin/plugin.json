@@ -1,0 +1,76 @@
+{
+  "name": "agents",
+  "version": "0.4.0",
+  "description": "Live subagents, background shells, Monitor watches and cron timers: an AGENTS band above the prompt (main model, each run with its model or command, task and status, watches with time left, crons with their next fire, skills fired, ☕ while idle sleep is held), an /agents-info pane with a Who view (cost, tokens, time and a pixel mascot per run, picked from a pool for its state), a Code view (the files touched, as a map of nodes in edit order) and a Peers view (the other agents of this herdr workspace, this session's HERDR-ORCH spokes grouped under their requests), a toast when one finishes and ALL DONE when the last one does.",
+  "author": {
+    "name": "Zehui Lin"
+  },
+  "license": "MIT",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "band": {
+      "type": "string",
+      "title": "AGENTS band above the prompt",
+      "description": "on: a row while subagents or background shells run, lingering 10 s after the last one; off: no band (the /agents-info pane stays)",
+      "default": "on",
+      "options": [
+        "on",
+        "off"
+      ]
+    },
+    "toasts": {
+      "type": "string",
+      "title": "Toast when a subagent or shell finishes",
+      "description": "on: one toast per subagent or background shell that ends (finished, failed or killed); off: none. Never for the main loop.",
+      "default": "on",
+      "options": [
+        "on",
+        "off"
+      ]
+    },
+    "keepEnded": {
+      "type": "string",
+      "title": "Finished and failed runs kept in the pane",
+      "description": "How many ended runs (finished or failed, subagents and shells) the pane keeps, newest first; older ones are dropped. /agents-info clear drops them all. 0 keeps none.",
+      "default": "10",
+      "options": [
+        "0",
+        "5",
+        "10",
+        "25",
+        "50"
+      ]
+    },
+    "caffeinate": {
+      "type": "string",
+      "title": "Hold idle sleep while work runs",
+      "description": "on: while any subagent, background shell or watch runs, one `caffeinate -i -t 600` child holds idle sleep (re-armed while work runs, stopped when the last one ends; ☕ on the AGENTS row); off: none.",
+      "default": "on",
+      "options": [
+        "on",
+        "off"
+      ]
+    },
+    "sound": {
+      "type": "string",
+      "title": "Chime with ALL DONE",
+      "description": "off: the ALL DONE toast only (default); on: a rising chime (the peers mod's) with it. Needs toasts on.",
+      "default": "off",
+      "options": [
+        "off",
+        "on"
+      ]
+    },
+    "summaries": {
+      "type": "string",
+      "title": "Code map summaries",
+      "description": "edit: each node's third line is taken from the edit itself (the Edit's first changed line, the Write's first line); haiku: reserved, drawn as edit until a model summary is approved; off: the file's folder instead.",
+      "default": "edit",
+      "options": [
+        "edit",
+        "haiku",
+        "off"
+      ]
+    }
+  }
+}
