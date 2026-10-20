@@ -1,47 +1,96 @@
-// The images mod: the ▣ IMAGES row (row.tsx) draws a tile for each
-// `[Image #n]` tag in the prompt box, the tag and the tile's size beneath, and
-// drops it when the tag leaves the box. The box is followed through
-// `prompt.edit` (typing and pastes: the box `next(e)` resolves) and
-// `prompt.change` (history, clear, undo, a plugin's fill: the box as it
-// stands); a sent prompt and a /clear empty the list. Tiles are placeholders:
-// the engine hands a plugin no pasted image's bytes before the prompt is sent
-// (`$.prompt.media` answers only a managed settings install, inside its
-// `prompt.submit` hook), there is no image cache on disk, and the hooks
-// environment has no zlib or DecompressionStream to inflate a PNG with.
-// /images lists the tags; /images on|off shows or hides the tiles (kept in the
-// store); the row's `hide` Button is /images off, run from a timer.
+// The images mod: after a prompt is sent, the ▣ IMAGES row (row.tsx) draws
+// each pasted `[Image #n]` as a half-block thumbnail. `prompt.submit` notes
+// the sent prompt's tags (before `next`, since the main loop's `turn.start`
+// runs inside it); the next main-loop `turn.start` starts the pipeline
+// (pipeline.ts) from a $.clock timer, one image after another, each tile
+// written to $.state `images.tiles` (at most 6, newest last) as it is built.
+// The next prompt clears the row (option linger: turn, 2min or
+// until-cleared). /img shows the last tiles again, /img <n> draws one image of
+// this session, /img off|on (kept in the store) and /img clear; the row's
+// `clear` Button is /img clear, run from a timer.
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, PluginOptions, Register } from 'claude-code'
+import type { EngineInterface, PluginOptions, PromptSubmitInput, Register, Timer } from 'claude-code'
 
-import { COMMAND, DELAY_MS, STORE_BAND, USAGE, isBandOn, isSameTags, listText, parseArgs, tagsOf } from './kit'
+import type { ImageTile } from '../types'
+import { COMMAND, DELAY_MS, LINGER_MS, STORE_BAND, USAGE, captionOf, isAutoOn, lingerOf, parseArgs, sizeOf, tagText, tagsOf, withTile } from './kit'
+import { buildTile, pipelineOf } from './pipeline'
 import { drawRow } from './row'
 
-const tags = atom({ plugin: 'images', key: 'tags' } as const, [])
+const tiles = atom({ plugin: 'images', key: 'tiles' } as const, [])
+const shown = atom({ plugin: 'images', key: 'shown' } as const, false)
 const band = atom({ plugin: 'images', key: 'band' } as const, '')
 
-// The tags last written, so a keystroke that leaves them as they were writes
-// nothing; null when not known (a fresh module after a hot reload, which keeps
-// the state; a session start; a failed write), when the next edit compares
-// with the state itself, an empty list included.
-let lastTags: number[] | null = null
+// The tags of the last sent prompt, waiting for its main-loop turn.start.
+let pending: number[] = []
+// Bumped by every sent prompt, new batch, /img off, /img clear and session change: a run
+// that started under an older value stops and writes nothing.
+let generation = 0
+// linger=2min: the timer that clears the row.
+let lingerTimer: Timer | null = null
 
 const whyOf = (err: unknown): string => (err instanceof Error ? err.message : String(err))
 
-/** The box's tags written to the state when they changed; best effort. */
-async function noteBox($: EngineInterface, text: string): Promise<void> {
-  const now = tagsOf(text)
-  const was = lastTags ?? (await read($, tags))
-  lastTags = now
-  if (isSameTags(now, was)) return
-  try {
-    await update($, tags, () => now)
-  } catch {
-    // The row keeps the last list; not known what the state holds, so the next change of the box writes again.
-    lastTags = null
+const stopLinger = () => {
+  lingerTimer?.cancel()
+  lingerTimer = null
+}
+
+/** The row hides; the tiles stay for /img. */
+async function hide($: EngineInterface): Promise<void> {
+  stopLinger()
+  await update($, shown, () => false)
+}
+
+/** The row shows; with linger=2min it clears two minutes later. */
+async function show($: EngineInterface, options: PluginOptions): Promise<void> {
+  stopLinger()
+  await update($, shown, () => true)
+  if (lingerOf(options.linger) === '2min') {
+    lingerTimer = $.clock.after(LINGER_MS, () => {
+      lingerTimer = null
+      void update($, shown, () => false).catch(() => {})
+    })
   }
 }
 
-/** Writes /images on|off to the store; the words to add to the reply when it could not be kept. */
+/** A built tile into the state: a hidden row's tiles are replaced, a shown row's added to (at most 6, newest last). */
+async function addTile($: EngineInterface, tile: ImageTile, options: PluginOptions): Promise<void> {
+  const isShown = await read($, shown)
+  await update($, tiles, list => (isShown ? withTile(list, tile) : [tile]))
+  if (!isShown) await show($, options)
+}
+
+/** A sent prompt's images, one after another; stops when a newer prompt, batch or clear comes. */
+async function runBatch($: EngineInterface, list: readonly number[], options: PluginOptions): Promise<void> {
+  const mine = ++generation
+  const p = await pipelineOf($, () => mine === generation)
+  for (const n of list) {
+    const tile = await buildTile($, n, sizeOf(options.size), p)
+    if (tile === null || mine !== generation) return
+    await addTile($, tile, options)
+  }
+}
+
+/** /img <n>: that image of this session; a toast when only its tag could be drawn. */
+async function runOne($: EngineInterface, n: number, options: PluginOptions): Promise<void> {
+  const mine = generation
+  const p = await pipelineOf($, () => mine === generation)
+  const tile = await buildTile($, n, sizeOf(options.size), p)
+  if (tile === null || mine !== generation) return
+  await addTile($, tile, options)
+  if (!tile.cells) await $.ui.toast(`${tagText(n)}: no thumbnail (not in this session's images folder, or no sips) (/${COMMAND} ${n})`)
+}
+
+/** /img clear and the clear button: no tiles, no row, any run stopped. */
+async function clearAll($: EngineInterface): Promise<void> {
+  generation++
+  pending = []
+  stopLinger()
+  await update($, tiles, () => [])
+  await update($, shown, () => false)
+}
+
+/** Writes /img on|off to the store; the words to add to the reply when it could not be kept. */
 async function persist($: EngineInterface, value: 'on' | 'off'): Promise<string> {
   try {
     await $.store.set(STORE_BAND, value)
@@ -51,62 +100,79 @@ async function persist($: EngineInterface, value: 'on' | 'off'): Promise<string>
   }
 }
 
-/** /images on|off and the hide button: the reply's line. */
-async function setBand($: EngineInterface, value: 'on' | 'off'): Promise<string> {
-  await update($, band, () => value)
-  const note = await persist($, value)
-  return value === 'on' ? `Image tiles on.${note}` : `Image tiles off: /${COMMAND} on shows them again.${note}`
-}
+/** A prompt the person sent: typed or from the bridge, not a slash command, not one they do not see. */
+const isPersonPrompt = (e: PromptSubmitInput): boolean =>
+  !e.command && !e.isMeta && (e.origin?.kind === 'composer' || e.origin?.kind === 'bridge')
 
 export const register: Register = (on, options: PluginOptions) => {
   on('session.start', async ($, e, next) => {
     const started = await next(e)
-    lastTags = null
+    pending = []
+    generation++
+    stopLinger()
     await $.command.register({
-      name: 'images',
-      description: 'IMAGES row: list the [Image #n] tags in the prompt box, or show (on) or hide (off) their tiles',
-      argumentHint: 'on | off',
+      name: 'img',
+      description: 'IMAGES row: show the last image tiles again, draw [Image #n] of this session, turn the automatic tiles on or off, or clear them',
+      argumentHint: '<n> | on | off | clear',
     })
     try {
       const stored = await $.store.get(STORE_BAND)
       await update($, band, () => (stored === 'on' || stored === 'off' ? stored : ''))
     } catch {
-      // No store: the tiles are on.
+      // No store: the auto option applies.
     }
     return started
   })
 
-  // Typing and pastes: the box the editor will show.
-  on('prompt.edit', async ($, e, next) => {
-    const box = await next(e)
-    try {
-      if (box && typeof box.text === 'string') await noteBox($, box.text)
-    } catch {
-      // The tiles follow the next change.
-    }
-    return box
-  }).catch(($, e, next) => (next.called ? undefined : next(e)))
-
-  // History, a clear (a sent prompt), an undo, a plugin's fill: the box as it stands.
-  on('prompt.change', async ($, e, next) => {
-    const r = await next(e)
-    try {
-      await noteBox($, typeof e.text === 'string' ? e.text : '')
-    } catch {
-      // The tiles follow the next change.
-    }
-    return r
-  }).catch(($, e, next) => (next.called ? undefined : next(e)))
-
-  // A prompt sent from the box takes its tags with it.
+  // A sent prompt clears the row (unless linger=until-cleared) and leaves its
+  // tags for its turn. Done before next: the main loop's turn.start runs inside it.
   on('prompt.submit', async ($, e, next) => {
+    let mine: number[] = []
+    try {
+      if (isPersonPrompt(e)) {
+        generation++
+        pending = []
+        if (lingerOf(options.linger) !== 'until-cleared') await hide($)
+        if (isAutoOn(await read($, band), options.auto)) mine = tagsOf(e.text)
+        pending = mine
+      }
+    } catch {
+      // The row keeps what it shows; the next prompt tries again.
+    }
     const r = await next(e)
     try {
-      if (e.origin?.kind === 'composer') await noteBox($, '')
+      if (pending === mine && mine.length > 0) {
+        if (r.drop !== undefined) {
+          pending = []
+        } else if (e.turnId !== undefined) {
+          // Typed over a running turn: no turn.start of its own may come soon, so the run starts now.
+          pending = []
+          $.clock.after(DELAY_MS, () => {
+            void runBatch($, mine, options).catch(() => {})
+          })
+        }
+      }
     } catch {
-      // The clear's prompt.change empties the list too.
+      // The tags wait for the next turn.start.
     }
     return r
+  }).catch(($, e, next) => (next.called ? undefined : next(e)))
+
+  // The main loop's turn: the sent prompt's images, from a timer.
+  on('turn.start', async ($, e, next) => {
+    const started = await next(e)
+    try {
+      if (e.agentId === undefined && pending.length > 0) {
+        const list = pending
+        pending = []
+        $.clock.after(DELAY_MS, () => {
+          void runBatch($, list, options).catch(() => {})
+        })
+      }
+    } catch {
+      // Nothing drawn for this prompt; /img <n> draws one.
+    }
+    return started
   }).catch(($, e, next) => (next.called ? undefined : next(e)))
 
   // A /clear or an in-process resume puts another conversation in this process.
@@ -114,7 +180,7 @@ export const register: Register = (on, options: PluginOptions) => {
     const result = await next(e)
     if (e.reason === 'clear' || e.reason === 'resume') {
       try {
-        await noteBox($, '')
+        await clearAll($)
       } catch {
         // Nothing more to do.
       }
@@ -123,15 +189,38 @@ export const register: Register = (on, options: PluginOptions) => {
   })
 
   // The command and its matcher are spelled literally, so the host reads it as answering its own command.
-  on('command.run', { command: 'images' }, async ($, e) => {
+  on('command.run', { command: 'img' }, async ($, e) => {
     const asked = parseArgs(e.args)
     try {
       switch (asked.kind) {
-        case 'list':
-          return { text: listText(await read($, tags), isBandOn(await read($, band))) }
-        case 'on':
-        case 'off':
-          return { text: await setBand($, asked.kind) }
+        case 'show': {
+          const list = await read($, tiles)
+          if (list.length === 0) return { text: `No image tiles yet: send a prompt with a pasted image, or /${COMMAND} <n> for [Image #n] of this session.` }
+          await show($, options)
+          return { text: `Showing ${list.map(captionOf).join(', ')}.` }
+        }
+        case 'draw': {
+          const n = asked.n
+          $.clock.after(DELAY_MS, () => {
+            void runOne($, n, options).catch(err => $.ui.toast(`/${COMMAND} ${n}: ${whyOf(err)}`))
+          })
+          return { text: `Drawing ${tagText(n)} of this session above the prompt.` }
+        }
+        case 'on': {
+          await update($, band, () => 'on')
+          return { text: `Image tiles on: a sent prompt's images are drawn above the prompt.${await persist($, 'on')}` }
+        }
+        case 'off': {
+          await update($, band, () => 'off')
+          // A run in flight stops before its next tile, so the row stays hidden.
+          generation++
+          pending = []
+          await hide($)
+          return { text: `Image tiles off: /${COMMAND} on turns them on again; /${COMMAND} <n> still draws one.${await persist($, 'off')}` }
+        }
+        case 'clear':
+          await clearAll($)
+          return { text: 'Image tiles cleared.' }
         default:
           return { text: USAGE }
       }
@@ -141,13 +230,13 @@ export const register: Register = (on, options: PluginOptions) => {
   })
 
   on('ui.render', { component: 'AbovePrompt' }, ($, e, next) =>
-    drawRow($, e, () => next(e), options, {
+    drawRow($, e, () => next(e), {
       // The press's work runs from a timer, never inside the press; the toast names the command twin.
-      hide: () =>
+      clear: () =>
         $.clock.after(DELAY_MS, () => {
-          void setBand($, 'off')
-            .then(text => $.ui.toast(text))
-            .catch(err => $.ui.toast(`/${COMMAND} off: ${whyOf(err)}`))
+          void clearAll($)
+            .then(() => $.ui.toast(`Image tiles cleared (/${COMMAND} clear).`))
+            .catch(err => $.ui.toast(`/${COMMAND} clear: ${whyOf(err)}`))
         }),
     }),
   )

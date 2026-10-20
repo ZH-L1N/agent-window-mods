@@ -1,7 +1,7 @@
 {
   "name": "images",
-  "version": "0.1.0",
-  "description": "An IMAGES band above the prompt with a tile per [Image #n] tag in the prompt box, the tag and the tile's size beneath; tiles leave when the tag leaves the box. The engine does not hand a plugin a pasted image's bytes before the prompt is sent, so each tile is a placeholder (no preview). /images on | off.",
+  "version": "0.2.0",
+  "description": "After a prompt is sent, an IMAGES band above the prompt draws each pasted [Image #n] as a half-block thumbnail (macOS sips turns the engine's PNG into a small BMP), with [Image #n] WxH beneath; cleared when the next prompt is sent. /img shows the last tiles again, /img <n> draws one image of this session, /img on | off | clear.",
   "author": {
     "name": "Zehui Lin"
   },
@@ -10,10 +10,24 @@
   "userConfig": {
     "size": {
       "type": "string",
-      "title": "Tile height in rows",
-      "description": "16, 24 (default) or 32 terminal rows; a tile is twice as many columns wide (48 by 24 at the default). Shrunk to fit the band's height and width.",
+      "title": "Tile width in columns",
+      "description": "12, 16, 24 (default) or 32 terminal columns; the height follows the image (half-block rows = columns × height / width / 2, at most 24 rows).",
       "default": "24",
-      "options": ["16", "24", "32"]
+      "options": ["12", "16", "24", "32"]
+    },
+    "auto": {
+      "type": "string",
+      "title": "Draw a sent prompt's images on their own",
+      "description": "on (default) or off; /img on | off overrides it and is kept for the next session. /img <n> works either way.",
+      "default": "on",
+      "options": ["on", "off"]
+    },
+    "linger": {
+      "type": "string",
+      "title": "How long the row stays",
+      "description": "turn (default): until the next prompt is sent; 2min: two minutes, or the next prompt if sooner; until-cleared: until /img clear or the clear button.",
+      "default": "turn",
+      "options": ["turn", "2min", "until-cleared"]
     }
   }
 }

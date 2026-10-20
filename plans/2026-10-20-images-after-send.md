@@ -1,5 +1,7 @@
 # Plan: images mod, thumbnails above the stack after send (default on)
 
+**Status: implemented 2026-10-20 10:59** (step 1 done: 0.2.0 built, review findings fixed, final gate passed: validate, 44 tests, tsc; not yet installed)
+
 **Status: approved 2026-10-20 07:45** (size 24 columns default, fuchsia chip, clear on the next prompt) (v1 proposed a browser
 pane; Zehui: "I thought this can be rendered just above the stack"; the sips
 route makes that possible)

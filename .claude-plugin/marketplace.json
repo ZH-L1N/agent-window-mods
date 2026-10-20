@@ -121,7 +121,7 @@
     {
       "name": "images",
       "source": "./images",
-      "description": "An IMAGES band above the prompt with a tile for each [Image #n] tag in the prompt box, the tag and the tile size beneath, gone when the tag leaves the box; tiles are placeholders (the engine gives a plugin no pasted image bytes before the prompt is sent). Option size 16 | 24 | 32 rows; /images on | off.",
+      "description": "After a prompt is sent, an IMAGES band above the prompt draws each pasted [Image #n] as a half-block thumbnail (macOS sips turns the engine's PNG into a small BMP), [Image #n] WxH beneath, cleared on the next prompt. Options size 12 | 16 | 24 | 32 columns, auto on | off, linger turn | 2min | until-cleared; /img [<n> | on | off | clear].",
       "author": {
         "name": "Zehui Lin"
       },
@@ -130,7 +130,7 @@
       "tags": [
         "mod",
         "images",
-        "prompt"
+        "thumbnails"
       ]
     },
     {
