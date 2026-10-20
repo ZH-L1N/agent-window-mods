@@ -88,11 +88,16 @@ test('row: the clear button runs /img clear from a timer and names the command i
   expect(await rowView($)).toBeNull()
 })
 
-test('row: a band too short for the tile and its caption shows the captions only', async ($, on) => {
+test('row: a band too short for the tile draws it smaller, and captions only under 3 rows', async ($, on) => {
   await drawn($, on, [1], { stackBeneath: ['zm-10-sys', 'zm-80-next'] })
   // 6 rows of tile, a caption, three rows beneath: 10.
   expect((await rowView($, 160, { maxRows: 10 }))?.tiles.length).toBe(1)
-  expect(await rowView($, 160, { maxRows: 9 })).toEqual({ tiles: [], captions: ['[Image #1] 1376x688'], more: '' })
+  // 9 rows: 5 left for the tile, so it is drawn at 5 rows, narrower in the same shape (24 x 6 -> 20 x 5).
+  const small = await rowView($, 160, { maxRows: 9 })
+  expect(small?.tiles.length).toBe(1)
+  expect(small?.captions).toEqual(['[Image #1] 1376x688'])
+  // 6 rows: 2 left, under the 3-row floor: captions only.
+  expect(await rowView($, 160, { maxRows: 6 })).toEqual({ tiles: [], captions: ['[Image #1] 1376x688'], more: '' })
 })
 
 test('row: a narrow band draws the newest tiles that fit and `+n more`', async ($, on) => {

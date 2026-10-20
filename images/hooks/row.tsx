@@ -11,7 +11,7 @@ import { atom, read } from 'claude-code'
 import type { EngineInterface, RenderElement, RenderInput } from 'claude-code'
 
 import type { ImageTile } from '../types'
-import { CHIP, CHIP_BG, CHIP_FG, ROW_KEY, captionOf, cellsOf, rowsOf, stackRow, tileWidth } from './kit'
+import { CHIP, CHIP_BG, CHIP_FG, ROW_KEY, captionOf, cellsOf, rowsOf, shrinkTile, stackRow, tileWidth } from './kit'
 
 const tiles = atom({ plugin: 'images', key: 'tiles' } as const, [])
 const shown = atom({ plugin: 'images', key: 'shown' } as const, false)
@@ -44,6 +44,9 @@ export function tilesThatFit(list: readonly ImageTile[], room: number): ImageTil
   return all.length === list.length ? all : fit(room - MORE_WIDTH - GAP)
 }
 
+/** A tile drawn in fewer rows than this is no picture: captions only. */
+const MIN_TILE_ROWS = 3
+
 export async function drawRow($: EngineInterface, e: RenderInput<'AbovePrompt'>, pass: () => Promise<RenderElement>, act: RowActions) {
   if (e.surface !== 'terminal' || e.props.hasSurvey) return pass()
   if (!(await read($, shown))) return pass()
@@ -55,11 +58,13 @@ export async function drawRow($: EngineInterface, e: RenderInput<'AbovePrompt'>,
   const below = await pass().catch(() => null)
   const cols = e.props.bodyColumns > 0 ? e.props.bodyColumns : 80
   const room = cols - cellsOf(CHIP) - GAP - CLEAR_WIDTH - GAP
-  const drawn = tilesThatFit(list, room)
-  const more = list.length - drawn.length
-  // The tallest tile and its caption beside the rows beneath must fit the band, or only the captions show.
-  const tallest = Math.max(0, ...drawn.map(t => (t.cells ? t.rows : 0)))
-  const hasRoom = e.props.maxRows <= 0 || tallest + 1 + rowsOf(below) <= e.props.maxRows
+  // The rows the band has left for a tile beside the rows beneath and the caption:
+  // a tile taller than that is drawn smaller (its shape kept); under MIN_TILE_ROWS only the captions show.
+  const free = e.props.maxRows <= 0 ? Number.POSITIVE_INFINITY : e.props.maxRows - 1 - rowsOf(below)
+  const fitted = list.map(t => (t.cells && t.rows > free ? shrinkTile(t, Math.max(0, Math.floor(free))) : t))
+  const drawn = tilesThatFit(fitted, room)
+  const more = fitted.length - drawn.length
+  const hasRoom = free >= MIN_TILE_ROWS
   const { Box, Text, Button, Raster } = $.ui.resolve(e)
   const row = (
     <Box key={ROW_KEY} flexDirection="row" gap={GAP}>

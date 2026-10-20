@@ -39,3 +39,7 @@ no third-party code is copied.
 The ` ▣ IMAGES ` chip on fuchsia `#e879f9`, padded to the zehui-mods chip
 width, follows the other zehui-mods rows (HERE, NEXT, GOAL, CACHE, HANDOFF).
 The thumbnails are the user's own pasted images, drawn in half-blocks.
+
+## 0.2.1, 2026-10-20
+
+A tile taller than the rows the band has free is drawn smaller in the same shape (nearest cell) instead of being dropped to its caption; under 3 free rows the captions show alone. Found live: a portrait screenshot (580x1302) showed only its caption.

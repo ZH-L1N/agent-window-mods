@@ -23,6 +23,9 @@ import {
   textTile,
   tileGrid,
   withTile,
+  shrinkTile,
+  toBase64,
+  fromBase64,
 } from './kit'
 import { decodeCells, makeBmp } from './test-kit'
 
@@ -179,4 +182,18 @@ test('kit: /img words', async () => {
   expect(parseArgs('clear')).toEqual({ kind: 'clear' })
   expect(parseArgs('1 2')).toEqual({ kind: 'usage' })
   expect(parseArgs('maybe')).toEqual({ kind: 'usage' })
+})
+
+test('kit: shrinkTile keeps the shape and samples the nearest cell', () => {
+  const words = new Uint32Array(4 * 6 * 3)
+  for (let i = 0; i < 4 * 6; i++) { words[i * 3] = 0x2580; words[i * 3 + 1] = i; words[i * 3 + 2] = 100 + i }
+  const tile = { n: 1, w: 40, h: 120, columns: 4, rows: 6, cells: toBase64(new Uint8Array(words.buffer)) }
+  const small = shrinkTile(tile, 3)
+  expect([small.columns, small.rows]).toEqual([2, 3])
+  const out = new Uint32Array(fromBase64(small.cells).buffer)
+  expect(out.length).toBe(2 * 3 * 3)
+  expect(out[0]).toBe(0x2580)
+  expect(out[1]).toBe(0) // row 0, col 0 of the source
+  expect(out[4]).toBe(2) // row 0, col 2 of the source
+  expect(shrinkTile(tile, 6)).toBe(tile)
 })

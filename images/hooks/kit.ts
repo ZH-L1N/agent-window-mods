@@ -396,3 +396,27 @@ export function stackRow(row: RenderElement, below: unknown): RenderElement {
   const sorted = [...rows, row].sort((a, b) => (stackOrderOf(a) ?? 0) - (stackOrderOf(b) ?? 0))
   return { type: 'Box', props: { flexDirection: 'column' }, children: [...sorted, ...others] as RenderNode[] }
 }
+
+/**
+ * The tile's cells drawn again at `toRows` rows, the width scaled to keep the
+ * image's shape (nearest cell, no averaging): for a band with fewer rows free
+ * than the tile is tall. Returns the tile itself when it already fits.
+ */
+export function shrinkTile(t: ImageTile, toRows: number): ImageTile {
+  if (!t.cells || t.rows <= toRows || toRows < 1) return t
+  const src = new Uint32Array(fromBase64(t.cells).buffer)
+  const columns = Math.max(1, Math.round((t.columns * toRows) / t.rows))
+  const words = new Uint32Array(columns * toRows * 3)
+  for (let y = 0; y < toRows; y++) {
+    const sy = Math.min(t.rows - 1, Math.floor((y * t.rows) / toRows))
+    for (let x = 0; x < columns; x++) {
+      const sx = Math.min(t.columns - 1, Math.floor((x * t.columns) / columns))
+      const from = (sy * t.columns + sx) * 3
+      const to = (y * columns + x) * 3
+      words[to] = src[from]!
+      words[to + 1] = src[from + 1]!
+      words[to + 2] = src[from + 2]!
+    }
+  }
+  return { ...t, columns, rows: toRows, cells: toBase64(new Uint8Array(words.buffer)) }
+}
