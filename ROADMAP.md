@@ -12,10 +12,9 @@ fork. See `plans/TIMELINE.md` for the ledger.
 
 ## Next, in order
 
-1. **Image after send** (`images` mod): when a prompt with a pasted image is
-   sent, open that image in a side pane automatically (default on), `/img`
-   to reopen the last one or a given one. A preview before sending is not
-   possible: the engine exposes no pasted-image bytes until the prompt goes.
+1. ~~Image after send~~ done 2026-10-20: the `images` mod draws a thumbnail
+   row above the stack once a prompt with a pasted image is sent (sips → BMP
+   → half-blocks). A preview before sending stays impossible.
 2. **Safety batch**, one plan:
    - outbound-send gate: a preview card before any message or email is sent
      or a deployed app's environment is changed, showing the exact target,

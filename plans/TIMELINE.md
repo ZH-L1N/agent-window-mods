@@ -24,3 +24,4 @@
 - 2026-10-20 03:40 | images 0.1.0 | built, not installed | engine exposes no pasted-image bytes before send; placeholder tiles only
 - 2026-10-20 06:10 | agents 0.4.0 | shipped | Peers view (p) grouped by HERDR-ORCH request, mascot pools per state (38 poses); 110 tests
 - 2026-10-20 06:15 | all zehui mods | cache refreshed | plugin caches re-copied via `claude plugin update` after version bumps (token-weather 0.1.11); new sessions had been loading stale copies
+- 2026-10-20 11:35 | images 0.2.1 | shipped | thumbnails above the stack after send (sips → BMP → half-blocks), tall tiles shrink to fit; live-checked
