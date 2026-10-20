@@ -34,7 +34,8 @@ what letting it go cold would cost.
 per token; the figure is what the same tokens would cost on the API.
 
 The Compact button works only while the band has focus (ctrl+x tab, or a
-click; herdr passes no clicks), so it has a command too:
+click in Claude Code's fullscreen renderer; the classic renderer reports no
+clicks), so it has a command too:
 
 | Button | Command |
 | --- | --- |

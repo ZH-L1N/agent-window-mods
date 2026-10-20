@@ -32,6 +32,19 @@ fork. See `plans/TIMELINE.md` for the ledger.
 5. **Later**: deploy-watch band, device binding and rig heartbeat chips,
    protected-paths guard, away mode, outputs shelf, tool-gotcha rewriter.
 
+## Clicks on buttons
+
+Buttons in bands and panes take clicks only under Claude Code's fullscreen
+renderer (`/tui fullscreen`, which saves `"tui": "fullscreen"`; attached
+background sessions are fullscreen regardless). The classic renderer never
+enables mouse reporting, so its buttons draw but cannot be clicked, in herdr
+or any other terminal; that is why every button here has a slash-command
+twin. Found 2026-10-20: herdr forwards the mouse to the pane fine (verified
+on 0.8.2); for the wheel and click-position fixes, herdr 0.9.4 or later.
+Upstream, claude-code issue 101306 explains the alt-text-only `Image`
+element under herdr (the graphics check rejects the `libghostty` terminal
+name), so pictures may start drawing there without any change here.
+
 ## Not planned
 
 Recording mode (no screen recording needed), pixel-pulse (decorative),

@@ -76,8 +76,9 @@ drew placeholder tiles in the box; that is gone.)
 - `/img on`: draw them again.
 - `/img clear`: drop the tiles.
 
-The button works only while the band has focus (ctrl+x tab; herdr passes no
-clicks), so it has a command:
+The button works only while the band has focus (ctrl+x tab, or a click in
+Claude Code's fullscreen renderer; the classic renderer reports no clicks), so
+it has a command:
 
 | Button | Command |
 | --- | --- |

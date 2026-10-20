@@ -38,8 +38,9 @@ a pane beside the conversation. Nothing is written into the transcript.
 and Sonnet 5.5 (the agents mod's table, from the claude-api skill, cached
 2026-10-06). The result does not say which model the alias resolved to.
 
-The buttons work only while the pane has focus (ctrl+x tab; herdr passes no
-clicks), so each has a command:
+The buttons work only while the pane has focus (ctrl+x tab, or a click in
+Claude Code's fullscreen renderer; the classic renderer reports no clicks), so
+each has a command:
 
 | Button | Hotkey | Command |
 | --- | --- | --- |

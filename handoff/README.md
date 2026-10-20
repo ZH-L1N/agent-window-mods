@@ -38,8 +38,9 @@ save a handoff before it compacts.
 - **Before a compaction** with no handoff saved in the last 10 minutes: a
   toast "Compacting without a fresh handoff". It never stops the compaction.
 
-The buttons work only while the band has focus (ctrl+x tab, or a click; herdr
-passes no clicks), so every one has a command:
+The buttons work only while the band has focus (ctrl+x tab, or a click in
+Claude Code's fullscreen renderer; the classic renderer reports no clicks), so
+every one has a command:
 
 | Button | Command |
 | --- | --- |

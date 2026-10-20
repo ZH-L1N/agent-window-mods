@@ -17,8 +17,10 @@ Plan and review evidence: `../plans/2026-10-19-blast-radius-fork.md`.
    auto-focus. The pane opens with `focus: true` (the API admits only `true`
    or no key; `false` is refused), so the keys reach it at once: Enter or any
    digit cancels, only Tab + Enter or a click proceeds. Live test 2026-10-19:
-   an unfocused pane was unreachable in a herdr split (clicks do not pass
-   through, hotkeys need focus), so every hold timed out.
+   an unfocused pane was unreachable in a herdr split (hotkeys need focus and
+   the session ran Claude Code's classic renderer, which reports no clicks;
+   found 2026-10-20: the fullscreen renderer, `/tui fullscreen`, does), so
+   every hold timed out.
 3. **Linear redirect stripping.** `stripTrailingRedirects()` replaces the
    nested-quantifier regex at the old line 147 (possible catastrophic
    backtracking on a long segment, which would fail the guard open).

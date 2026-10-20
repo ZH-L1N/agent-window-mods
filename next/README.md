@@ -48,8 +48,9 @@ press Enter.
   (SYS 10, PLAN 20, HANDOFF 30, CACHE 40, AGENTS 50, GOAL 60, HERE 70,
   NEXT 80), right above the prompt box it fills; other bands follow.
 
-The buttons work only while the band has focus (ctrl+x tab; herdr passes no
-clicks), so each has a command:
+The buttons work only while the band has focus (ctrl+x tab, or a click in
+Claude Code's fullscreen renderer; the classic renderer reports no clicks), so
+each has a command:
 
 | Button | Command |
 | --- | --- |

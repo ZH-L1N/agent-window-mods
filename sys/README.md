@@ -41,7 +41,8 @@ The `btop` button and `/sys btop` open btop in a herdr pane below this one:
 Outside herdr (`HERDR_ENV` is not `1`) nothing runs and the answer is
 "btop needs a herdr pane". While one open is under way, another press or
 `/sys btop` splits nothing and answers "btop is already opening". The button works only while the band has focus
-(ctrl+x tab; herdr passes no clicks), so it has a command too:
+(ctrl+x tab, or a click in Claude Code's fullscreen renderer; the classic
+renderer reports no clicks), so it has a command too:
 
 | Button | Command |
 | --- | --- |
