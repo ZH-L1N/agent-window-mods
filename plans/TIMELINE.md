@@ -26,3 +26,4 @@
 - 2026-10-20 06:15 | all zehui mods | cache refreshed | plugin caches re-copied via `claude plugin update` after version bumps (token-weather 0.1.11); new sessions had been loading stale copies
 - 2026-10-20 11:35 | images 0.2.1 | shipped | thumbnails above the stack after send (sips → BMP → half-blocks), tall tiles shrink to fit; live-checked
 - 2026-10-20 12:59 | — | docs | clicks need the fullscreen renderer (not a herdr bug): READMEs, PROVENANCE, ROADMAP, skill corrected
+- 2026-10-24 23:51 | zh 0.1.1 | shipped | leading instruction notes stripped from translations, rule added to the system prompt, l: latest button; 22 tests, tsc clean

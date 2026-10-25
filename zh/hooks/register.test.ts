@@ -236,3 +236,32 @@ test('keeps the last three translations, newest first', async ($, on) => {
   await w.settle()
   expect(w.calls).toHaveLength(5)
 })
+
+test('pane: latest shows the last reply (kept, or a new call when a reply came)', async ($, on) => {
+  const w = await world($, on, CONVO)
+  await w.start()
+  await w.command('2')
+  await w.settle()
+  expect((await paneView($)).markdown).toBe('ZH(Older reply with `npm test` and **bold**.)')
+  await press($, w, 'zh-latest')
+  expect(w.calls.map(c => c.prompt)).toEqual(['Older reply with `npm test` and **bold**.', 'Newest reply.'])
+  expect((await paneView($)).markdown).toBe('ZH(Newest reply.)')
+  // Kept: pressing again makes no call.
+  await press($, w, 'zh-latest')
+  expect(w.calls).toHaveLength(2)
+  // A new reply: latest translates it.
+  w.setMessages([...CONVO, { role: 'user', text: 'q3' }, { role: 'assistant', text: 'Brand new reply.' }])
+  await press($, w, 'zh-latest')
+  expect(w.calls.at(-1)?.prompt).toBe('Brand new reply.')
+  expect((await paneView($)).header.startsWith(`${replyLabel(1)} · `)).toBe(true)
+})
+
+test('a leading note from the model about its instructions is dropped from the shown translation', async ($, on) => {
+  const w = await world($, on, CONVO)
+  w.setAnswer(e => ({ isAnswered: true, text: `[this preamble appears in the system prompt, not in the user message; translating only the user message.]\n\nZH(${e.prompt})`, usage: usage() }))
+  await w.start()
+  await w.command('')
+  await w.settle()
+  expect((await paneView($)).markdown).toBe('ZH(Newest reply.)')
+  expect(w.calls[0]?.system).toBe(RULES)
+})

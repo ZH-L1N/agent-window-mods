@@ -1,5 +1,5 @@
 // The zh pane: a dim header (which reply, the model, the seconds, the tokens
-// and the estimated cost), framed prev, next and close buttons with hotkeys,
+// and the estimated cost), framed prev, next, latest and close buttons with hotkeys,
 // a dim English line while a call runs, then the translation as Markdown. Box, Text,
 // Button and Markdown only, so every surface draws it the same.
 import { atom, read } from 'claude-code'
@@ -26,6 +26,7 @@ export const headerOf = (it: ZhItem): string =>
 export type PaneActions = {
   prev: () => void
   next: () => void
+  latest: () => void
   close: () => void
 }
 
@@ -47,6 +48,7 @@ export async function drawPane($: EngineInterface, e: RenderInput<'Pane'>, act: 
         <Box flexShrink={0} flexDirection="row" gap={1}>
           <Button key="zh-prev" label="p: prev" hotkey="p" onPress={() => act.prev()} />
           <Button key="zh-next" label="n: next" hotkey="n" onPress={() => act.next()} />
+          <Button key="zh-latest" label="l: latest" hotkey="l" onPress={() => act.latest()} />
           <Button key="zh-close" label="q: close" hotkey="q" onPress={() => act.close()} />
         </Box>
       </Box>

@@ -25,6 +25,13 @@ third-party code is copied.
 
 ## Look
 
-The dim header and the `p: prev`, `n: next`, `q: close` framed buttons follow
+0.1.1 (2026-10-24): the system prompt tells the model to begin with the
+translated first line and never mention its instructions, a leading note
+about them is stripped (`cleanTranslation`), and an `l: latest` button joins
+the pane. Cause: the engine appends the organization's instructions to a
+mod's `$.model.complete` system prompt, and Haiku once opened a translation
+with a note about that preamble.
+
+The dim header and the `p: prev`, `n: next`, `l: latest`, `q: close` framed buttons follow
 the other zehui-mods panes (the "Claude Code Mods" deck look). Look only; no
 code came from the deck.

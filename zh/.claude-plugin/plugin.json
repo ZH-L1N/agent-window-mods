@@ -1,7 +1,7 @@
 {
   "name": "zh",
-  "version": "0.1.0",
-  "description": "/zh translates the last assistant reply (or the n-th back) into Simplified Chinese with Haiku or Sonnet and shows it in a pane, code, paths, commands and names kept exactly; prev, next and close buttons, the last three translations kept.",
+  "version": "0.1.1",
+  "description": "/zh translates the last assistant reply (or the n-th back) into Simplified Chinese with Haiku or Sonnet and shows it in a pane, code, paths, commands and names kept exactly; prev, next, latest and close buttons, the last three translations kept.",
   "author": {
     "name": "Zehui Lin"
   },
@@ -13,7 +13,10 @@
       "title": "Translation model",
       "description": "haiku: fast and cheap (default); sonnet: slower, better with dense technical prose. Used by /zh and the pane's prev and next.",
       "default": "haiku",
-      "options": ["haiku", "sonnet"]
+      "options": [
+        "haiku",
+        "sonnet"
+      ]
     }
   }
 }

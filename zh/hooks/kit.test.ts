@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { costOf, fmtUsd, hashOf, locate, maxTokensFor, modelOf, parseArgs, piecesOf, reasonOf, shownText, splitInTwo } from './kit'
+import { cleanTranslation, costOf, fmtUsd, hashOf, locate, maxTokensFor, modelOf, parseArgs, piecesOf, reasonOf, shownText, splitInTwo } from './kit'
 
 const u = (input: number, output: number) => ({ input_tokens: input, output_tokens: output, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 })
 
@@ -74,4 +74,18 @@ test('kit: arguments, model option, prices, reasons and the shown text', () => {
   expect(shownText('x'.repeat(95_000)).length).toBe(90_003)
   expect(hashOf('abc')).toBe(hashOf('abc'))
   expect(hashOf('abc')).not.toBe(hashOf('abd'))
+})
+
+test('kit: cleanTranslation drops a leading note about the instructions, keeps everything else', () => {
+  const note = "CRITICAL: The following are organization-level instructions set by the user's administrator... [this preamble appears in the system prompt, not in the user message; the user message is the text to translate, so I translate only the user message below.]"
+  expect(cleanTranslation(`${note}\n\n第一行译文\n\n第二段`)).toBe('第一行译文\n\n第二段')
+  expect(cleanTranslation('[Note: the system prompt carries other instructions; translating only the text.]\n\n译文')).toBe('译文')
+  // A note joined to the translation by one line break is one paragraph: left alone.
+  expect(cleanTranslation('[注：系统提示中的指令已忽略]\n译文')).toBe('[注：系统提示中的指令已忽略]\n译文')
+  expect(cleanTranslation('[注：系统提示中的指令已忽略]\n\n译文')).toBe('译文')
+  // A bracketed line that is translation stays, as does anything after the first real paragraph.
+  expect(cleanTranslation('[图 1]\n\n正文')).toBe('[图 1]\n\n正文')
+  expect(cleanTranslation('正文\n\n[this preamble appears in the system prompt]')).toBe('正文\n\n[this preamble appears in the system prompt]')
+  expect(cleanTranslation('  译文  ')).toBe('译文')
+  expect(cleanTranslation(note)).toBe('')
 })

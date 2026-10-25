@@ -151,7 +151,7 @@
     {
       "name": "zh",
       "source": "./zh",
-      "description": "/zh translates the last assistant reply (or the n-th back) into Simplified Chinese with Haiku or Sonnet and shows it in a pane, code, paths, commands and names kept exactly; prev, next and close buttons with command twins, the last three translations kept.",
+      "description": "/zh translates the last assistant reply (or the n-th back) into Simplified Chinese with Haiku or Sonnet and shows it in a pane, code, paths, commands and names kept exactly; prev, next, latest and close buttons with command twins, the last three translations kept.",
       "author": {
         "name": "Zehui Lin"
       },

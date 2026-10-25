@@ -130,7 +130,7 @@ export async function paneView($: Engine): Promise<{ header: string; busy: strin
 }
 
 /** Presses a pane button and lets its timer and the call run. */
-export async function press($: Engine, w: World, key: 'zh-prev' | 'zh-next' | 'zh-close'): Promise<void> {
+export async function press($: Engine, w: World, key: 'zh-prev' | 'zh-next' | 'zh-latest' | 'zh-close'): Promise<void> {
   const ui = await mountPane($)
   await ui.press({ key })
   await ui.unmount()

@@ -18,6 +18,7 @@ import {
   RULES,
   USAGE,
   addUsage,
+  cleanTranslation,
   costOf,
   emptyUsage,
   hashOf,
@@ -178,7 +179,7 @@ async function translateInto(
       back,
       total,
       model,
-      text: results.map(r => (r.isAnswered ? r.text.trim() : '')).join('\n\n'),
+      text: results.map(r => (r.isAnswered ? cleanTranslation(r.text) : '')).join('\n\n'),
       ms,
       inputTokens: inputOf(usage),
       outputTokens: usage.output_tokens || 0,
@@ -257,6 +258,7 @@ export const register: Register = (on, options) => {
     drawPane($, e, {
       prev: () => later($, () => move($, options, 1)),
       next: () => later($, () => move($, options, -1)),
+      latest: () => later($, () => show($, options, 1)),
       close: () => later($, async () => {
         await $.ui.close({ id: PANE })
         return { text: '', isNotice: false }
