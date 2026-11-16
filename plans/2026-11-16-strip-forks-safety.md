@@ -245,6 +245,12 @@ a number.
 - the local mods skill, corrected where this plan found it stale (band
   stacking, the types path, the fail-closed gate catch, Client elements).
 
+**Shipping note, 2026-11-16, after the plan review.** For a fork, gate step 3 is read against the pinned
+upstream: the fork must add no type error beyond those the untouched upstream has under the same compiler
+options and engine types. Three upstreams have such errors against 2.1.325 (20 in the skin's test helper, 2
+and 6 around a tool-name matcher for a tool this build does not have). They are listed in each fork's
+`PROVENANCE.md` and left as upstream wrote them, in keeping with "upstream code is otherwise left as it is".
+
 ## Shared facts for implementers
 
 - **Band rows in 2.1.325.** `AbovePrompt` is asked once per plugin; a hook

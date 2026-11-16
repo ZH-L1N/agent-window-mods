@@ -28,3 +28,4 @@
 - 2026-10-20 12:59 | — | docs | clicks need the fullscreen renderer (not a herdr bug): READMEs, PROVENANCE, ROADMAP, skill corrected
 - 2026-10-24 23:51 | zh 0.1.1 | shipped | leading instruction notes stripped from translations, rule added to the system prompt, l: latest button; 22 tests, tsc clean
 - 2026-11-16 02:43 | — | shipped | strip, forks and safety rework: spec, plan and its five-round plan review; ten band-row tests in nine mods now follow engine 2.1.325 (own row per plugin); neutral test fixture name; no runtime change
+- 2026-11-16 04:01 | skins 0.5.16-zm.1 | shipped | fork of hellosverre/claude-skins v0.5.16 (MIT): default skin terminal, usage band off, no update check, star notice or dark-mode probe, Compact button without a digit hotkey; 256 tests; installed

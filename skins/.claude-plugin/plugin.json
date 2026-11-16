@@ -1,0 +1,11 @@
+{
+  "name": "skins",
+  "version": "0.5.16-zm.1",
+  "description": "Skins for Claude Code: tool rows that open onto their input and answer, highlighted code, diff, table, math, Mermaid and shell cards, links, folding, a usage band, a calm mode and sixteen themes. /skin swaps them live.",
+  "author": { "name": "hellosverre", "url": "https://github.com/hellosverre" },
+  "homepage": "https://github.com/hellosverre/claude-skins",
+  "repository": "https://github.com/hellosverre/claude-skins",
+  "license": "MIT",
+  "keywords": ["claude-code-mods", "claude-mods", "function-hooks", "theme", "skin"],
+  "types": "./types/index.d.ts"
+}

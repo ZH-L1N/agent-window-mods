@@ -208,6 +208,22 @@
         "safety",
         "guard"
       ]
+    },
+    {
+      "name": "skins",
+      "source": "./skins",
+      "description": "Redraws the transcript: tool rows on a rail that open onto their input and answer, highlighted code, diff, table, math, Mermaid and shell cards, file links, folding, a calm mode and sixteen themes; /skin swaps them live. Fork of hellosverre/claude-skins v0.5.16: the default skin is terminal, the usage band starts off, and the mod makes no network, file or process call.",
+      "author": {
+        "name": "hellosverre"
+      },
+      "repository": "https://github.com/hellosverre/claude-skins",
+      "license": "MIT",
+      "category": "productivity",
+      "tags": [
+        "mod",
+        "theme",
+        "skin"
+      ]
     }
   ]
 }
