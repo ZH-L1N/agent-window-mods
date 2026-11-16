@@ -10,7 +10,7 @@ stack order; the agents pane (Who, Code, Peers views, mascots per state);
 `/zh`, `/web` with `web_read`, the herdr peer alarm and board; the blast-radius
 fork. See `plans/TIMELINE.md` for the ledger.
 
-## Done (2026-11-16): forks, the strip and comfort
+## Done (2026-11-16): forks, the strip, comfort and the safety batch
 
 One plan (`plans/2026-11-16-strip-forks-safety.md`), shipped mod by mod:
 
@@ -24,24 +24,31 @@ One plan (`plans/2026-11-16-strip-forks-safety.md`), shipped mod by mod:
   fill.
 - **Comfort:** the prompt queue (`queue`), image thumbnails under the sent
   message, the mascot behaviour ladder, and a small file tree (`filetree`).
+- **Safety batch:** `motion-hold` holds a shell command that would move
+  hardware or disturb a machine until a person approves it, and
+  `send-gate` holds an outbound send in a session that runs without
+  permission prompts. Both read their rules from a local config file
+  outside this repo. motion-hold's command matcher went through three fix
+  rounds; what it cannot see, and what its last review left open, is
+  listed in its README.
 
 ## Next, in order
 
-1. **Safety batch, built but not landed.** `motion-hold` holds a shell
-   command that would move hardware or disturb a machine, and `send-gate`
-   holds an outbound send in a session that runs without permission
-   prompts. Both are written and tested, and neither is in this repo yet:
-   after the two fix rounds the plan allows, the last review of
-   motion-hold's command matcher still found one way past it that counts as
-   high, and smaller ones. `send-gate` waits with it, since it shares
-   motion-hold's hold kit. Next: one more fix round for the matcher, then
-   both land together. The plan's "Held back and deferred" section and its
-   review log have the details.
+1. **motion-hold 0.1.1:** the findings its last review left open, each
+   with a test and checked against 0.1.0 over generated commands: an
+   assignment that opens a group behind `time -p`; the step budget that
+   gives up at 14 levels of a quote nested in `${...}`; the room that
+   weak values spend; more spellings after signal 0; the command form
+   nested in another `${...}`; the shapes that take quadratic time. Then
+   the gaps every version shares that ordinary work can meet: a carried
+   value used through `${NAME%/}` and the like, a name given two literal
+   values, and input fed to a remote shell behind `sshpass` and other
+   wrappers. Its README lists all of them.
 2. **Agents pane:** the messages view behind the numbered card buttons.
-3. **motion-hold, once it has landed:** a stop command (its local config
-   has none yet, so the STOP row is an indicator until one is set), and
-   input given to a whole group or loop (`{ ssh rig-1.local bash; } <
-   run.sh`), which the matcher does not follow yet.
+3. **motion-hold, later:** a stop command (its local config has none yet,
+   so the STOP row is an indicator until one is set), and input given to
+   a whole group or loop (`{ ssh rig-1.local bash; } < run.sh`), which the
+   matcher does not follow yet.
 4. **The guard's skipped events:** a look at what the organization plugin
    guard's skipped events (`classic.SessionStart`, `prompt.compose`,
    `session.append`, `session.compact`, `skill.prompt`) cost the existing

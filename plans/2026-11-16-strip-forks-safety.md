@@ -28,10 +28,9 @@ the owner named.
 
 **Status: plan review approved 2026-11-16 02:31** (5 rounds, reviewer pane, 15 findings and 3 questions resolved; log in `plans/fixs/`)
 
-**Status: partly implemented 2026-11-16 11:28.** Phases 0, 1, 3, 5, 6 and 7 are
-committed and pushed. Phase 2 (motion-hold) and phase 4 (send-gate) are
-built and tested but held back: see "Held back and deferred" and the phase
-ledger at the end.
+**Status: implemented 2026-11-16 16:12.** Phases 0, 1, 3, 5, 6 and 7 landed on 2026-11-16 by 11:28; phases 2
+(motion-hold) and 4 (send-gate) landed after a third fix round of the matcher that the owner
+approved. See "Held back and deferred" and the phase ledger.
 
 ## Success criteria
 
@@ -3142,27 +3141,33 @@ edit the file is under `Touched this turn` and carries `M`.
 
 ## Held back and deferred
 
-- TEMP(2026-11-16, until: a third matcher fix round passes its check):
-  phase 2 (motion-hold) and phase 4 (send-gate) are built and tested but
-  not committed; a third fix round needs the owner's approval. After the
-  two fix rounds this plan allows,
-  the last check of the matcher still confirmed one high finding and eleven
-  smaller ones, all in `motion-hold/hooks/match.ts`; the gate, the card and
-  the hold kit are clean. The failure rule above therefore keeps phase 2
-  out, and phase 4 with it, since send-gate's `hooks/hold.ts` is a copy of
-  the kit whose home and tests are in motion-hold. Both folders stay in the
-  working tree, untracked. The findings are listed in
-  `plans/fixs/2026-11-16-strip-forks-safety-ship-review.md`. Until the two
-  mods land, `strip/README.md`, `strip/PROVENANCE.md` and the band order
-  section of `README.md` say that motion-hold is "not in this repo yet";
-  those notes go when it lands.
+- Phases 2 and 4 were held back on 2026-11-16 after the two fix rounds this
+  plan allows: the last check of the matcher still confirmed one high
+  finding and eleven smaller ones, all in `motion-hold/hooks/match.ts`
+  (the gate, the card and the hold kit were clean), and send-gate waited
+  with it, since its `hooks/hold.ts` is a copy of the kit whose home and
+  tests are in motion-hold. The owner then approved a third, narrow fix
+  round with a stop rule (see "Task 5, third correction"). Its one check
+  confirmed no high finding, so both phases landed the same day, and the
+  notes that said motion-hold was "not in this repo yet" are gone.
+- TEMP(2026-11-16, until: motion-hold 0.1.1):
+  nine findings of the matcher's last check stay open (no high; four medium,
+  five low), all in `motion-hold/hooks/match.ts` and all listed in the mod's
+  README under "Found by the last review and not fixed yet". An assignment
+  that opens a group behind `time -p` is not read as one. The step budget
+  gives up at 14 levels of a single quote nested in `${...}`. Values newly
+  carried as weak spend the room for carried values. Under a limit with no
+  configured host named, a hold put together from a carried value passes.
+  More spellings hide a later signal option after signal 0.
+  A `${ command; }` nested in another `${...}` is not read. Some very long
+  commands take quadratic time and are then refused.
 - TEMP(2026-11-16, until: queue 0.1.1): two low findings of the queue's last
   check stay open. A `/q clear`, or any other act that empties the queue,
   that lands while the automatic take's state write is in flight brings the
   taken item back. A put-back whose state write fails loses the item
   without a toast. Both need a window of a few milliseconds or a state
   write that fails.
-- TEMP(2026-11-16, until: send-gate lands): one low finding of send-gate's
+- TEMP(2026-11-16, until: send-gate 0.1.1): one low finding of send-gate's
   last check stays open. When a write of the permission mode to the session
   state fails outright and the mod is reloaded before the next mode event,
   the launcher's variable or the settings can put a mode that is not gated
@@ -3176,9 +3181,9 @@ Filled in as phases land.
 | --- | --- | --- | --- |
 | 0 Housekeeping | `bfada59` | yes | spec, plan, band-row tests for engine 2.1.325 |
 | 1 Forks | `c83efaf`, `8a27477`, `ee57d20`, `8c1f29f` | yes | skins, redgreen, smart-compact, breathe |
-| 2 Motion-hold | none | no | held back: one high finding left in the matcher after two fix rounds |
+| 2 Motion-hold | `89c4195` | yes | motion-hold 0.1.0, after a third fix round the owner approved; findings of its check deferred |
 | 3 Strip | `3f860fd`, `699d746`, `f2df7d8` | yes | token-weather 0.1.12, strip 0.1.0, here 0.1.1 |
-| 4 Send-gate | none | no | built and reviewed; waits for phase 2, the home of its hold kit |
+| 4 Send-gate | `b7dafff` | yes | send-gate 0.1.0; one low finding deferred |
 | 5 Queue | `9a0e403` | yes | queue 0.1.0; two low findings deferred |
 | 6 Comfort | `439023a`, `dc80e01` | yes | images 0.3.0, agents 0.5.0 |
 | 7 File tree | `def2ebd` | yes | filetree 0.1.0 |
