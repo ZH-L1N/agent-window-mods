@@ -4,7 +4,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, PluginOptions, Register, Timer } from 'claude-code'
 
-import type { AgentRun, CodeTouch } from '../types'
+import type { AgentRun, CodeTouch, ReactionKind } from '../types'
 import { drawBand } from './band'
 import { EDITING_MS, EDIT_TOOLS, FILE_TOOLS, NUMSTAT_TIMEOUT_MS, addTouch, bashTouches, dirOf, parseNumstat, toolTouches } from './codemap'
 import type { Touch } from './codemap'
@@ -37,8 +37,15 @@ import {
   togglePane,
   tokensOf,
   windowOf,
+  MAIN_MASCOT,
+  mainPoseId,
+  mascotOf,
+  settleAll,
+  wantedPoses,
 } from './kit'
 import type { Usage } from './kit'
+import { isPending, react } from './ladder'
+import { donePose, errorPose } from './mascots'
 import { labelOf, lastLineOf, notesOf, outputFileOf, textOfContent } from './shells'
 import type { TaskNote } from './shells'
 import { nodePath } from './code'
@@ -58,6 +65,7 @@ const code = atom({ plugin: 'agents', key: 'code' } as const, [])
 const turn = atom({ plugin: 'agents', key: 'turn' } as const, 0)
 const codeScope = atom({ plugin: 'agents', key: 'codeScope' } as const, 'turn')
 const view = atom({ plugin: 'agents', key: 'view' } as const, 'who')
+const mascots = atom({ plugin: 'agents', key: 'mascots' } as const, {})
 
 // A shell's command and task text as kept in its run record (drawings clip further).
 const COMMAND_MAX = 2_000
@@ -135,6 +143,53 @@ function toastEnd($: EngineInterface, run: AgentRun, options: PluginOptions): vo
 }
 
 /**
+ * A card's mascot reacts at `at` (the behaviour ladder): only an observed event
+ * calls this, never session.start or the tick. Best effort.
+ */
+async function reactCard($: EngineInterface, id: string, kind: ReactionKind, pose: string, at: number): Promise<void> {
+  try {
+    await update($, mascots, m => ({ ...m, [id]: react(mascotOf(m, id), kind, pose, at) }))
+  } catch {
+    // A mascot is a courtesy: the card draws its ambient pose instead.
+  }
+}
+
+/** The end of a run reacts on its card: the finished pool's pick, or the error pool's. */
+const reactEnd = ($: EngineInterface, run: AgentRun, at: number): Promise<void> =>
+  run.status === 'finished' ? reactCard($, run.id, 'finished', donePose(run.id), at) : reactCard($, run.id, 'error', errorPose(run.id), at)
+
+/** A failed tool call reacts on its running card: the subagent's, or the main loop's (`agentId` absent). */
+async function reactToolError($: EngineInterface, agentId: string | undefined): Promise<void> {
+  const at = await $.clock.now()
+  if (agentId === undefined) {
+    const m = await read($, main)
+    if (!m.isRunning) return
+    await reactCard($, MAIN_MASCOT, 'tool-error', errorPose(mainPoseId(m)), at)
+  } else {
+    const run = (await read($, runs)).find(a => a.agentId === agentId && a.status === 'running')
+    if (!run) return
+    await reactCard($, run.id, 'tool-error', errorPose(run.id), at)
+  }
+  await update($, now, () => at)
+}
+
+/**
+ * The tick's step of the ladder: every card's record settled toward its wanted
+ * ambient pose (written only when one moved). True while any still reacts or
+ * waits for its clip, so the tick keeps running.
+ */
+async function settleMascots($: EngineInterface, list: readonly AgentRun[], at: number): Promise<boolean> {
+  const wanted = wantedPoses(list, await read($, main), at)
+  const before = await read($, mascots)
+  const after = settleAll(before, wanted, at)
+  if (after !== before) await update($, mascots, m => settleAll(m, wanted, at))
+  return Object.entries(wanted).some(([id, pose]) => {
+    const rec = mascotOf(after, id)
+    return rec !== undefined && isPending(rec, pose, at)
+  })
+}
+
+/**
  * True when another watch on `run`'s target ended done within DONE_RECENT_MS
  * of `at`: a notification of this one greys its entry instead of toasting again.
  */
@@ -181,6 +236,8 @@ async function endShell($: EngineInterface, note: TaskNote, options: PluginOptio
     }
     await update($, runs, l => l.map(a => (a.id === run.id ? ended : a)))
     isEnded = true
+    // A shell's card reacts to its end (a watch draws no mascot).
+    if (isShell(ended)) await reactEnd($, ended, at)
     await update($, now, () => at)
     if (!isStaleEnd) toastEnd($, ended, options)
     await pruneAfterEnd($, options)
@@ -391,10 +448,17 @@ async function tick($: EngineInterface, options: PluginOptions): Promise<void> {
   if (wasInFlight && !inFlight) allDone($, options)
   wasInFlight = inFlight
   await holdAwake($, inFlight && isCaffeinateOn(options.caffeinate), at)
+  // The behaviour ladder: settle every mascot; one still reacting or waiting for its clip keeps the tick going.
+  let isPosing = false
+  try {
+    isPosing = await settleMascots($, list, at)
+  } catch {
+    // No state: the drawings settle on their own, the tick goes on.
+  }
   const isBand = isBandOn(options.band) && batchOf(list, at, await read($, dismissedAt)).length > 0
   const isLive = inFlight
   const isFlashing = list.some(a => a.endedAt !== undefined && at - a.endedAt < PULSE_MS)
-  if (!isLive && !isBand && !isFlashing) {
+  if (!isLive && !isBand && !isFlashing && !isPosing) {
     stopFast()
     if (await isCodeMoving($, at)) {
       await update($, now, () => at)
@@ -407,7 +471,8 @@ async function tick($: EngineInterface, options: PluginOptions): Promise<void> {
     }
     return
   }
-  wasActive = true
+  // A mascot posing keeps the tick going, but only real activity earns the last move that clears the skills.
+  if (isLive || isBand || isFlashing) wasActive = true
   if (ticks++ % MOTION_EVERY === 0) await readMotion($)
   await update($, now, () => at)
   let isPaneOpen = false
@@ -688,6 +753,18 @@ export const register: Register = (on, options) => {
     return result
   }).catch(($, e, next) => (next.called ? undefined : next(e)))
 
+  // Any tool call (main loop and subagents) that failed: its running card's mascot reacts.
+  // The result goes back untouched; a refused call is no failure.
+  on('tool.call', async ($, e, next) => {
+    const result = await next(e)
+    try {
+      if (result.deny === undefined && result.isError === true) await reactToolError($, e.agentId)
+    } catch {
+      // A mascot is a courtesy: the result goes back whatever happens here.
+    }
+    return result
+  }).catch(($, e, next) => next(e))
+
   // The code map: each file tool's call (main loop and subagents) records the file it touched.
   // One hook for them all (MultiEdit, Grep and Glob are matched by name though this engine may not ship them).
   const fileTools = new RegExp(`^(?:${FILE_TOOLS.join('|')})$`)
@@ -860,6 +937,8 @@ export const register: Register = (on, options) => {
         if (before?.status === 'running') {
           const ended = (await read($, runs)).find(a => a.agentId === agentId)
           if (ended) toastEnd($, ended, options)
+          // The card reacts to the end it was seen making: never to a status read back after a reload.
+          if (ended) await reactEnd($, ended, at)
         }
         // Its shells that end with its final answer get no notification: they end here.
         for (const sh of (await read($, runs)).filter(a => a.parentAgentId === agentId && a.endsWithParent && a.status === 'running')) {

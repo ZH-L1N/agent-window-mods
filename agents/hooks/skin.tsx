@@ -7,7 +7,7 @@
 import { atom, read, update } from 'claude-code'
 import type { Elements, EngineInterface, PluginOptions, RenderInput } from 'claude-code'
 
-import type { AgentRun, MainLoop } from '../types'
+import type { AgentRun, MainLoop, MascotRec, ReactionKind } from '../types'
 import { drawCode } from './code'
 import { showPeers } from './peers'
 import { drawPeers } from './peerview'
@@ -40,8 +40,11 @@ import {
   tierOf,
   pruneEnded,
   mainPoseId,
+  MAIN_MASCOT,
+  mascotOf,
 } from './kit'
-import { boxOf, hubPose, mascotCells, mascotWidth } from './mascots'
+import { settle, shown } from './ladder'
+import { boxOf, hubPose, isPose, mascotCells, mascotWidth, runningPose } from './mascots'
 import type { Pose } from './mascots'
 
 const main = atom({ plugin: 'agents', key: 'main' } as const, { model: '', isRunning: false, startedAt: 0 })
@@ -49,6 +52,7 @@ const isCompact = atom({ plugin: 'agents', key: 'isCompact' } as const, false)
 const isStill = atom({ plugin: 'agents', key: 'isStill' } as const, false)
 const runs = atom({ plugin: 'agents', key: 'runs' } as const, [])
 const view = atom({ plugin: 'agents', key: 'view' } as const, 'who')
+const mascots = atom({ plugin: 'agents', key: 'mascots' } as const, {})
 
 export const CARD_BAR = 10
 const AMBER = '#f59e0b'
@@ -130,6 +134,8 @@ type PaneData = {
   cols: number
   /** Each shell's last output line, by run id. */
   tails: Readonly<Record<string, string>>
+  /** Each card's mascot record (the behaviour ladder), by run id; `main` for the hub card. */
+  mascots: Readonly<Record<string, MascotRec>>
 }
 
 export async function drawPane($: EngineInterface, e: RenderInput<'Pane'>, options: PluginOptions = {}) {
@@ -146,6 +152,7 @@ export async function drawPane($: EngineInterface, e: RenderInput<'Pane'>, optio
     still: await read($, isStill),
     cols: e.props.bodyColumns > 0 ? e.props.bodyColumns : 40,
     tails: await readTails($),
+    mascots: await read($, mascots),
   }
   if (e.surface === 'terminal') return paneTerminal($, $.ui.resolve(e), d)
   return panePlain($.ui.resolve(e), d)
@@ -283,7 +290,22 @@ function paneTerminal($: EngineInterface, ui: Elements['terminal'], d: PaneData)
       </Box>
     )
   }
-  const isOddSecond = Math.floor(at / 1000) % 2 === 1
+  /**
+   * What a card's mascot shows now on the behaviour ladder: its record settled
+   * toward `wanted` (a drawing writes nothing, the tick writes the same), then
+   * the reaction's pose or the ambient one, the bob counted from its clip.
+   */
+  const look = (id: string, wanted: Pose): { pose: Pose; isBobbed: boolean; isReacting: boolean; kind?: ReactionKind; reactAt: number } => {
+    const rec = settle(mascotOf(d.mascots, id), wanted, at)
+    const s = shown(rec, at)
+    return {
+      pose: isPose(s.pose) ? s.pose : wanted,
+      isBobbed: s.isBobbed && !still,
+      isReacting: s.isReacting,
+      ...(s.isReacting && rec.reaction ? { kind: rec.reaction.kind } : {}),
+      reactAt: rec.reaction?.at ?? at,
+    }
+  }
 
   const bar = (a: AgentRun) => {
     const n = barFill(a)
@@ -346,10 +368,11 @@ function paneTerminal($: EngineInterface, ui: Elements['terminal'], d: PaneData)
         </Box>
       </Box>
     )
+    // A shell bobs while it runs or reacts; a failed one stays red.
+    const m = look(a.id, poseOf(a, at))
     return (
       <Box key={a.id} flexDirection="row" gap={1} marginBottom={1}>
-        {isMascots &&
-          mascot(a.id, poseOf(a, at), a.status === 'running' && !still && isOddSecond, a.status === 'error' ? RED_RGB : undefined)}
+        {isMascots && mascot(a.id, m.pose, m.isBobbed && (m.isReacting || a.status === 'running'), a.status === 'error' ? RED_RGB : undefined)}
         {rows}
       </Box>
     )
@@ -376,7 +399,11 @@ function paneTerminal($: EngineInterface, ui: Elements['terminal'], d: PaneData)
         </Box>
       )
     }
-    const isPulse = a.status === 'error' && !still && a.endedAt !== undefined && at - a.endedAt < PULSE_MS && Math.floor(at / 250) % 2 === 0
+    // The mascot bobs while it reacts, or while it shows its running pose; a rested or waiting pose never bobs.
+    // The amber pulse shows only in the first PULSE_MS of an `error` reaction.
+    const m = look(a.id, poseOf(a, at))
+    const isMascotBobbed = m.isBobbed && (m.isReacting || (a.status === 'running' && m.pose === runningPose(a.id)))
+    const isPulse = !still && m.kind === 'error' && at - m.reactAt < PULSE_MS && Math.floor((at - m.reactAt) / 250) % 2 === 0
     const rows = (
       <Box flexDirection="column" flexGrow={1} flexShrink={1}>
         <Box flexDirection="row" gap={1}>
@@ -410,7 +437,7 @@ function paneTerminal($: EngineInterface, ui: Elements['terminal'], d: PaneData)
     )
     return (
       <Box key={a.id} flexDirection="row" gap={1} marginBottom={1}>
-        {isMascots && mascot(a.id, poseOf(a, at), a.status === 'running' && !still && isOddSecond && !isWaiting(a, at), isPulse ? AMBER_RGB : undefined)}
+        {isMascots && mascot(a.id, m.pose, isMascotBobbed, isPulse ? AMBER_RGB : undefined)}
         {rows}
       </Box>
     )
@@ -467,6 +494,7 @@ function paneTerminal($: EngineInterface, ui: Elements['terminal'], d: PaneData)
         </Text>
       </Box>
     )
+    const hubLook = look(MAIN_MASCOT, hubPose(mainPoseId(m)))
     if (d.isCompact) {
       return (
         <Text key="main-loop" wrap="truncate-end">
@@ -478,7 +506,7 @@ function paneTerminal($: EngineInterface, ui: Elements['terminal'], d: PaneData)
     }
     return (
       <Box key="main-loop" flexDirection="row" gap={1} marginBottom={1}>
-        {isMascots && mascot('main', hubPose(mainPoseId(m)), m.isRunning && !still && isOddSecond)}
+        {isMascots && mascot('main', hubLook.pose, hubLook.isBobbed && (hubLook.isReacting || m.isRunning))}
         {rows}
       </Box>
     )

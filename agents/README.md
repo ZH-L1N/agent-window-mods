@@ -45,9 +45,9 @@ does; and a code map of the files the tools touched:
   main-loop card tops Running (`2 subagents running`, or `2 tasks running`
   once shells are among them). **Collapse** switches to one line per run.
 
-  A background shell's card has a grey mascot instead of a coral one (a grey
-  bot with a terminal face; a grey bot in a blue cap for a coding agent's
-  CLI), a grey spinner, the bold title `sh · <command>` (`codex · <prompt>`),
+  A background shell's card has a mascot of our own instead of a coral one (a
+  grey terminal window, `shell-window`; for a coding agent's CLI, one of five
+  codex fuzzies picked by the run id), a grey spinner, the bold title `sh · <command>` (`codex · <prompt>`),
   its status word (running, finished, failed, killed), then
   `background shell · m:ss` (with the agent and model first for codex, and
   `exit n` once it failed) and the last line of its output, read from the
@@ -61,15 +61,41 @@ does; and a code map of the files the tools touched:
   "messages view comes with E3", as does `/agents-info open <n>`. The
   messages view itself comes in a later round (E3).
 
-The mascots move: a one-pixel bob each second while running, a braille
-spinner, a bright flash on finish and an amber pulse on error; a run waiting
-on a tool's result for over 20 s sleeps. A shell's mascot bobs while it runs
-and turns red when it fails. All of it holds still under Claude Code's
-reduced-motion setting.
+The mascots move: a one-pixel bob while running, a braille spinner, a bright
+flash on the bar on finish; a run waiting on a tool's result for over 20 s
+sleeps. A shell's mascot bobs while it runs and turns red when it fails. All
+of it holds still under Claude Code's reduced-motion setting.
+
+**The behaviour ladder (0.5.0)**: a mascot's pose follows what was seen
+happen, not only the run's status.
+
+- **A reaction cuts in at once and lasts three seconds.** Only an observed
+  event makes one: a subagent's or a shell's end (its pick from the finished
+  pool, or from the error pool: a subagent's with the amber pulse in its
+  first two seconds, a failed shell's drawn red with no pulse), or a tool
+  call of a running card that failed (its error pick on the subagent's card,
+  or on the main loop's hub card). A refused call is not a failure.
+- **Then it rests.** An ended card shows a calm pose for as long as it is
+  kept: `with-success-checkmark` when finished, `error-state-pixel` on error,
+  and never bobs. A shell rests in its own mascot.
+- **An ambient change waits for the clip.** A clip is the two-frame bob
+  cycle, 2 s long; running to waiting (or back) switches only once the
+  current clip has run in full, on the clip grid, and the clip clock restarts
+  only when the pose changes. The bob follows the clip, not the wall clock.
+- **A reload celebrates nothing.** The records live in state
+  (`agents.mascots`, by run id, `main` for the hub card) and are written only
+  by the event hooks and the once-a-second tick, which keeps running while a
+  mascot still reacts or waits for its clip. `session.start` makes no
+  reaction, so a reload or a resumed pane draws ended cards at rest.
+
+The mascots stay half-block Rasters drawn by the hooks: a Client module
+cannot draw a Raster.
 
 **Mascot pools (0.4.0)**: every state has a pool of poses from the mascot
 pack, and a card shows the pose its run id hashes to (FNV-1a), so it never
-changes pose within a state while two runs in one state seldom look alike:
+changes pose within a state while two runs in one state seldom look alike.
+From 0.5.0 the finished and error pools are the three-second reactions to a
+run's end; an ended card then rests in one calm pose (above):
 
 | State | Poses |
 | --- | --- |
@@ -291,9 +317,11 @@ claude plugin update agents@zehui-mods --scope user
   subagent ends.
 - The shell mascots are ours, not from the pack: four grey candidates drawn
   on 2026-10-19 (A `shell-terminal-face`, B `codex-hex-badge`, C
-  `shell-window`, D `codex-blue-cap`, in `SHELL_POSES` in `hooks/mascots.ts`).
-  A is wired for plain shells and D for a coding agent's CLI; change
-  `SHELL_POSE` or `CODEX_POSE` there to pick B or C instead.
+  `shell-window`, D `codex-blue-cap`) and five codex fuzzies, all in
+  `SHELL_POSES` in `hooks/mascots.ts`. C is wired for plain shells
+  (`SHELL_POSE`), and a coding agent's CLI shows one of the five fuzzies
+  (`CODEX_POOL`, picked by the run id); A, B and D are unused. Change
+  `SHELL_POSE` or `CODEX_POOL` there to pick others.
 - The Code view's `d` + number passes the file to `/diff` as its argument;
   the plugin API does not say whether `/diff` narrows to it, so it may open
   the whole working-tree diff instead.

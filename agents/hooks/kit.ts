@@ -5,8 +5,9 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface } from 'claude-code'
 
-import type { AgentRun, MainLoop, PaneView } from '../types'
-import { SHELL_POSE, codexPose, donePose, errorPose, runningPose, waitPose } from './mascots'
+import type { AgentRun, MainLoop, MascotRec, PaneView } from '../types'
+import { settle } from './ladder'
+import { REST_DONE, REST_ERROR, SHELL_POSE, codexPose, hubPose, runningPose, waitPose } from './mascots'
 import type { Pose } from './mascots'
 import { lastLineOf } from './shells'
 import { STALE_MS, fmtClock, fmtLeft } from './watch'
@@ -253,9 +254,11 @@ export const watchTime = (a: AgentRun, at: number): string => {
 }
 
 /**
- * The pose a run's card shows now: a pick from its state's pool by its run id,
- * so it never changes pose within a state. A shell keeps the terminal window
- * (a codex fuzzy for a coding agent's CLI).
+ * The ambient pose a run's card wants now (the behaviour ladder, ladder.ts):
+ * running and waiting a pick from its state's pool by its run id, so it never
+ * changes pose within a state; ended, the calm REST_DONE or REST_ERROR (the
+ * finished and error pools are for the reaction to the end only). A shell keeps
+ * the terminal window (a codex fuzzy for a coding agent's CLI).
  */
 export const poseOf = (a: AgentRun, at: number): Pose =>
   isShell(a)
@@ -263,15 +266,56 @@ export const poseOf = (a: AgentRun, at: number): Pose =>
       ? codexPose(a.id)
       : SHELL_POSE
     : a.status === 'finished'
-      ? donePose(a.id)
+      ? REST_DONE
       : a.status === 'error'
-        ? errorPose(a.id)
+        ? REST_ERROR
         : isWaiting(a, at)
           ? waitPose(a.id)
           : runningPose(a.id)
 
 /** The id the main loop's hub pose is picked by: the session's id, else its first main turn's, else `main`. */
 export const mainPoseId = (m: Pick<MainLoop, 'id'>): string => m.id || 'main'
+
+/** The record id of the main loop's hub card in `agents.mascots`. */
+export const MAIN_MASCOT = 'main'
+
+/** The ambient pose every mascot wants now, by record id: each card (not a watch or cron) and the hub card. */
+export const wantedPoses = (list: readonly AgentRun[], m: Pick<MainLoop, 'id'>, at: number): Record<string, Pose> => {
+  const out: Record<string, Pose> = { [MAIN_MASCOT]: hubPose(mainPoseId(m)) }
+  for (const a of list) if (!isWatching(a)) out[a.id] = poseOf(a, at)
+  return out
+}
+
+/** A record by id, or undefined (never a prototype's). */
+export const mascotOf = (recs: Readonly<Record<string, MascotRec>>, id: string): MascotRec | undefined =>
+  Object.hasOwn(recs, id) ? recs[id] : undefined
+
+/**
+ * Every record settled at `at` toward its wanted pose, a record made at first
+ * sight and the records of cards gone dropped; `recs` itself when nothing changed.
+ * A record of a card not in `wanted` is kept while its reaction runs: a hook may
+ * have written it for a card newer than the runs the tick read.
+ */
+export function settleAll(
+  recs: Readonly<Record<string, MascotRec>>,
+  wanted: Readonly<Record<string, string>>,
+  at: number,
+): Readonly<Record<string, MascotRec>> {
+  let isChanged = false
+  const out: Record<string, MascotRec> = {}
+  for (const [id, rec] of Object.entries(recs)) {
+    if (Object.hasOwn(wanted, id)) continue
+    if (rec.reaction !== undefined && at < rec.reaction.until) out[id] = rec
+    else isChanged = true
+  }
+  for (const [id, pose] of Object.entries(wanted)) {
+    const before = mascotOf(recs, id)
+    const after = settle(before, pose, at)
+    if (after !== before) isChanged = true
+    out[id] = after
+  }
+  return isChanged ? out : recs
+}
 
 /**
  * Each card's number, 1 up, in pane order: Running, Finished, then Error

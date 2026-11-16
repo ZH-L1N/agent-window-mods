@@ -183,6 +183,23 @@ export type MainLoop = {
   id?: string
 }
 
+/** What made a mascot react: its run ended (finished or with an error), or a tool call of its run failed. */
+export type ReactionKind = 'finished' | 'error' | 'tool-error'
+
+/**
+ * One card's mascot on the behaviour ladder (ladder.ts): the ambient pose it
+ * rests in and when that pose's clip started, and a reaction cutting in for
+ * three seconds. Written only by the event hooks and the tick, never by a drawing.
+ */
+export type MascotRec = {
+  /** The ambient pose shown, a pose name of mascots.ts. */
+  pose: string
+  /** When the ambient pose's clip clock started: reset only when the pose changes. */
+  clipAt: number
+  /** A reaction to an observed event, shown from `at` until `until` in place of `pose`. */
+  reaction?: { kind: ReactionKind; pose: string; at: number; until: number }
+}
+
 declare module 'claude-code' {
   interface PluginState {
     agents: {
@@ -218,6 +235,8 @@ declare module 'claude-code' {
       peerRequests: Record<string, PeerRequest>
       /** The pane whose brief made this session a spoke (its hub); '' when none. */
       peerHub: string
+      /** Each card's mascot record, by run id; `main` for the main loop's hub card. */
+      mascots: Record<string, MascotRec>
     }
   }
 }

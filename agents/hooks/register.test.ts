@@ -1,5 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
+import type { MascotRec } from '../types'
+import { SHELL_POSE, donePose, errorPose } from './mascots'
 import { T0, outputFileFor, usage, world } from './test-kit'
 
 test('register: an Agent call and its spawn make one running run', async ($, on) => {
@@ -292,4 +294,91 @@ test('register: opening the pane reads the last line of a shell that ended while
   expect(w.state('tails')).toBeUndefined()
   await $.command.run({ command: 'agents-info', args: 'open' } as never)
   expect(w.state('tails')).toEqual({ 'sh-b1': '1 failed, 3 passed' })
+})
+
+test('register: a tool error reacts on the running card; the result is returned unchanged', async ($, on) => {
+  const w = await world($, on)
+  await w.mainTurn(true)
+  await w.spawn('scout the parser')
+  await w.spawn('fix the lexer')
+  await w.finish('a2')
+  const recs = () => (w.state('mascots') as Record<string, MascotRec> | undefined) ?? {}
+  const before = recs().a2
+  await w.clock.advance(500)
+  const r = await w.tool('Edit', { file_path: '/repo/src/lexer.ts', old_string: 'a', new_string: 'b' }, { isError: true, agentId: 'a1' })
+  expect(r).toEqual({ result: 'String to replace not found', text: 'String to replace not found', isError: true })
+  expect(recs().a1?.reaction).toEqual({ kind: 'tool-error', pose: errorPose('a1'), at: T0 + 500, until: T0 + 3_500 })
+  // A call that went through, or an error on a card no longer running, makes no reaction.
+  expect(await w.tool('Read', { file_path: '/repo/src/lexer.ts' }, { agentId: 'a1' })).toEqual({ result: { ok: true }, text: 'ok' })
+  await w.tool('Read', { file_path: '/repo/nope.ts' }, { isError: true, agentId: 'a2' })
+  expect(recs().a2).toEqual(before)
+  // The main loop's card reacts to its own failed call, with its hub pick's error pose.
+  const bash = await w.bash('false', 'b1', { isForeground: true, isError: true })
+  expect(bash).toEqual({ result: 'Exit code 1', text: 'Exit code 1', isError: true })
+  expect(recs().main?.reaction).toMatchObject({ kind: 'tool-error', pose: errorPose('t-main') })
+})
+
+test('register: a refused call makes no reaction', async ($, on) => {
+  on('tool.call', { tool: /^Glob$/ }, async () => ({ deny: 'no' }) as never)
+  const w = await world($, on)
+  await w.spawn('scout the parser')
+  const r = await w.tool('Glob', { pattern: '*.ts' }, { agentId: 'a1' })
+  expect(r).toEqual({ deny: 'no' })
+  expect(((w.state('mascots') as Record<string, MascotRec> | undefined) ?? {}).a1?.reaction).toBeUndefined()
+})
+
+test('register: the end of a shell reacts on its card, then the card rests in the shell pose', async ($, on) => {
+  const w = await world($, on, true)
+  await w.bash('pytest -q tests/', 'b1')
+  await w.bash('make build', 'b2')
+  const recs = () => (w.state('mascots') as Record<string, MascotRec> | undefined) ?? {}
+  await w.clock.advance(2_000)
+  await w.notify('b1', { status: 'completed' })
+  await w.notify('b2', { status: 'failed', exitCode: 2 })
+  expect(recs()['sh-b1']?.reaction).toEqual({ kind: 'finished', pose: donePose('sh-b1'), at: T0 + 2_000, until: T0 + 5_000 })
+  expect(recs()['sh-b2']?.reaction).toEqual({ kind: 'error', pose: errorPose('sh-b2'), at: T0 + 2_000, until: T0 + 5_000 })
+  await w.clock.advance(3_000)
+  expect(recs()['sh-b1']).toEqual({ pose: SHELL_POSE, clipAt: T0 + 5_000 })
+  expect(recs()['sh-b2']).toEqual({ pose: SHELL_POSE, clipAt: T0 + 5_000 })
+})
+
+test('register: the end of a Monitor watch writes no mascot record', async ($, on) => {
+  const w = await world($, on, true)
+  await w.monitor('deploy', 'scripts/wait-deploy.sh 42', 'm1')
+  await w.clock.advance(2_000)
+  await w.notify('m1', { status: 'completed' })
+  await w.clock.advance(2_000)
+  expect((await w.runs()).map(a => [a.kind, a.status])).toEqual([['watch', 'finished']])
+  expect(Object.keys((w.state('mascots') as Record<string, MascotRec> | undefined) ?? {})).toEqual(['main'])
+})
+
+
+test('register: the tick writes the mascot records only when one moved', async ($, on) => {
+  const w = await world($, on, true)
+  await w.bash('sleep 600', 'b1')
+  // The first tick makes the shell's record and the hub card's.
+  await w.clock.advance(1_000)
+  expect(w.mascotWrites).toHaveLength(1)
+  expect(Object.keys((w.state('mascots') as Record<string, MascotRec> | undefined) ?? {}).sort()).toEqual(['main', 'sh-b1'])
+  // The shell runs on, its pose unchanged: the ticks after write nothing.
+  await w.clock.advance(5_000)
+  expect(w.mascotWrites).toHaveLength(1)
+})
+
+test('register: a main-loop tool error keeps the skills the band counted', { options: { band: 'off' } }, async ($, on) => {
+  const w = await world($, on, true)
+  // A cron waiting to fire is live for the batch, so a skill counts, yet nothing is in flight and no band shows: the tick is idle.
+  await w.cronCreate('*/30 * * * *', 'check the queue', 'c1', { nextFireAt: T0 + 3_600_000 })
+  await w.skill('plugin-authoring')
+  await w.clock.advance(2_000)
+  expect(w.state('skills')).toEqual({ 'plugin-authoring': 1 })
+  await w.mainTurn(true)
+  await w.bash('false', 'b9', { isForeground: true, isError: true })
+  expect(((w.state('mascots') as Record<string, MascotRec> | undefined) ?? {}).main?.reaction).toMatchObject({ kind: 'tool-error' })
+  await w.clock.advance(5_000)
+  expect(w.state('skills')).toEqual({ 'plugin-authoring': 1 })
+  // The reaction is over: the tick has gone idle.
+  const writes = w.nowWrites.length
+  await w.clock.advance(3_000)
+  expect(w.nowWrites).toHaveLength(writes)
 })

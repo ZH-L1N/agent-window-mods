@@ -1,6 +1,6 @@
 {
   "name": "agents",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Live subagents, background shells, Monitor watches and cron timers: an AGENTS band above the prompt (main model, each run with its model or command, task and status, watches with time left, crons with their next fire, skills fired, ☕ while idle sleep is held), an /agents-info pane with a Who view (cost, tokens, time and a pixel mascot per run, picked from a pool for its state), a Code view (the files touched, as a map of nodes in edit order) and a Peers view (the other agents of this herdr workspace, this session's HERDR-ORCH spokes grouped under their requests), a toast when one finishes and ALL DONE when the last one does.",
   "author": {
     "name": "Zehui Lin"

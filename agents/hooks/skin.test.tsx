@@ -2,8 +2,9 @@ import { expect, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import { SHELL_POSE, boxOf, codexPose, donePose, hubPose, mascotCells, pixelsOf, runningPose, waitPose } from './mascots'
-import { PLUGIN, outputFileFor, paneProps, usage, world } from './test-kit'
+import type { MascotRec } from '../types'
+import { REST_DONE, SHELL_POSE, boxOf, codexPose, donePose, errorPose, hubPose, mascotCells, pixelsOf, runningPose, waitPose } from './mascots'
+import { PLUGIN, T0, outputFileFor, paneProps, usage, world } from './test-kit'
 
 const mountPane = ($: Engine, cols = 80, surface: 'terminal' | 'desktop' = 'terminal') =>
   $.ui.mount({ plugin: PLUGIN, surface, component: 'Pane', requestId: 'agents', props: paneProps(cols) })
@@ -32,7 +33,8 @@ test('pane: stat tiles, section heads and a card per run with a Raster mascot', 
   expect(await ui.find({ type: 'Text', text: /^Scout the parser$/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /^Fix the lexer$/ })).toBeDefined()
 
-  // The finished run: its pose from the finished pool, ✓ green, its tier word in the careful colour.
+  // The finished run, drawn the moment it finished (inside its reaction window):
+  // its pose from the finished pool, ✓ green, its tier word in the careful colour.
   const done = await ui.find({ key: 'mascot-a2' })
   expect(done?.type).toBe('Raster')
   expect(done?.props.columns).toBe(pixelsOf(donePose('a2')).w)
@@ -225,4 +227,97 @@ test('register: ended runs past keepEnded are dropped as runs end; /agents-info 
   const reply = await $.command.run({ command: 'agents-info', args: 'clear' } as never)
   expect(String((reply as { text?: string }).text)).toMatch(/Cleared 5 ended runs/)
   expect((await w.runs()).map(a => a.id)).toEqual(['a8'])
+})
+
+// --- the behaviour ladder (0.5.0)
+
+const cellsOf = async (ui: { find: (q: { key: string }) => Promise<{ props: Record<string, unknown> } | undefined> }, id: string) =>
+  (await ui.find({ key: `mascot-${id}` }))?.props.cells
+
+test('ladder: a finish reacts, then rests', async ($, on) => {
+  const w = await world($, on, true)
+  await w.spawn('Scout the parser')
+  // The reaction's pose and the rested one differ for this id, so the switch shows.
+  expect(donePose('a1')).not.toBe(REST_DONE)
+  await w.clock.advance(1_000)
+  await w.finish('a1')
+  const ui = await mountPane($)
+  expect(await cellsOf(ui, 'a1')).toBe(mascotCells(donePose('a1')))
+  await w.clock.advance(3_000)
+  // Rested: the calm finished pose, never bobbed.
+  expect(await cellsOf(ui, 'a1')).toBe(mascotCells(REST_DONE))
+  await w.clock.advance(1_000)
+  expect(await cellsOf(ui, 'a1')).toBe(mascotCells(REST_DONE))
+  const rec = (w.state('mascots') as Record<string, MascotRec>).a1
+  expect(rec).toEqual({ pose: REST_DONE, clipAt: T0 + 4_000 })
+  await ui.unmount()
+})
+
+test('ladder: a reload celebrates nothing', async ($, on) => {
+  const w = await world($, on, true)
+  // An older version kept no records: the run ends with nothing written for its mascot.
+  w.dropped.add('mascots')
+  await w.spawn('Scout the parser')
+  await w.finish('a1')
+  w.dropped.delete('mascots')
+  // The reload: session.start raised again, then a draw.
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true } as never)
+  const ui = await mountPane($)
+  expect(await cellsOf(ui, 'a1')).toBe(mascotCells(REST_DONE))
+  await w.clock.advance(1_000)
+  expect(await cellsOf(ui, 'a1')).toBe(mascotCells(REST_DONE))
+  const recs = w.state('mascots') as Record<string, MascotRec>
+  expect(recs.a1).toEqual({ pose: REST_DONE, clipAt: T0 + 1_000 })
+  expect(Object.values(recs).some(r => r.reaction !== undefined)).toBe(false)
+  await ui.unmount()
+})
+
+test('ladder: running to waiting switches at a clip boundary', async ($, on) => {
+  const w = await world($, on, true)
+  await w.spawn('Read the logs')
+  // The first tick sees the card: its running clip starts at T0 + 1 s.
+  await w.clock.advance(1_000)
+  expect((w.state('mascots') as Record<string, MascotRec>).a1).toEqual({ pose: runningPose('a1'), clipAt: T0 + 1_000 })
+  await w.clock.advance(500)
+  await w.step('a1', usage('claude-opus-5-5', 1_000, 100), 1)
+  const ui = await mountPane($)
+  // 21 s in, the run is not yet waiting (20 s after its step at 1.5 s): still running.
+  await w.clock.advance(19_500)
+  expect([mascotCells(runningPose('a1')), mascotCells(runningPose('a1'), { isBobbed: true })]).toContain(await cellsOf(ui, 'a1'))
+  // Waiting from 21.5 s: the tick at 22 s switches it on the clip grid (21 s), not at the moment it saw the change.
+  await w.clock.advance(1_000)
+  expect((w.state('mascots') as Record<string, MascotRec>).a1).toEqual({ pose: waitPose('a1'), clipAt: T0 + 21_000 })
+  // A waiting card does not bob, though its clip is on its odd half.
+  expect(await cellsOf(ui, 'a1')).toBe(mascotCells(waitPose('a1')))
+  await ui.unmount()
+})
+
+test('ladder: reduced motion draws no bob', async ($, on) => {
+  const w = await world($, on, true, { prefersReducedMotion: true })
+  await w.spawn('Scout the parser')
+  await w.spawn('Fix the lexer')
+  const ui = await mountPane($)
+  // Running, the clip from T0 + 1 s: its odd half (2 s to 3 s) would bob.
+  for (let i = 0; i < 3; i++) {
+    await w.clock.advance(1_000)
+    expect(await cellsOf(ui, 'a1')).toBe(mascotCells(runningPose('a1')))
+  }
+  // An error reaction neither bobs nor pulses amber.
+  await w.finish('a2', 'error')
+  expect(await cellsOf(ui, 'a2')).toBe(mascotCells(errorPose('a2')))
+  await w.clock.advance(1_000)
+  expect(await cellsOf(ui, 'a2')).toBe(mascotCells(errorPose('a2')))
+  await ui.unmount()
+})
+
+test('ladder: an error reaction pulses amber; a finish never does', async ($, on) => {
+  const w = await world($, on, true)
+  await w.spawn('Scout the parser')
+  await w.spawn('Fix the lexer')
+  await w.finish('a1', 'error')
+  const ui = await mountPane($)
+  expect(await cellsOf(ui, 'a1')).toBe(mascotCells(errorPose('a1'), { tint: 0xf59e0b }))
+  await w.finish('a2')
+  expect(await cellsOf(ui, 'a2')).toBe(mascotCells(donePose('a2')))
+  await ui.unmount()
 })

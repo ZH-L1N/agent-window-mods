@@ -43,6 +43,10 @@ export type World = {
   /** The ids of the panes `$.ui.close` closed, in order. */
   closed: string[]
   nowWrites: unknown[]
+  /** Every value written under `mascots`, in order. */
+  mascotWrites: unknown[]
+  /** State keys of the plugin whose writes are dropped unstored (as if an older version never wrote them); add or delete to change it. */
+  dropped: Set<string>
   /** Every toast's text, in order. */
   toasts: string[]
   /** The files `$.fs.read` and `$.fs.stat` answer from, by path; set one to change it. */
@@ -172,13 +176,17 @@ export async function world(
   const opened: string[] = []
   const panes = new Set<string>()
   const nowWrites: unknown[] = []
+  const mascotWrites: unknown[] = []
   // A test's $ has no state noun: the last value written under each key, as the writes pass beneath.
   const latest = new Map<string, unknown>()
+  const dropped = new Set<string>()
   on('state.set', async (_$, e, next) => {
     const w = e as { plugin?: string; key?: string; value?: unknown }
     if (shape.isStateDown && w.plugin === PLUGIN) throw new Error('state is down')
+    if (w.plugin === PLUGIN && w.key && dropped.has(w.key)) return { value: { isSet: true, version: 0 } } as never
     if (w.plugin === PLUGIN && w.key) latest.set(w.key, w.value)
     if (w.key === 'now') nowWrites.push(w.value)
+    if (w.plugin === PLUGIN && w.key === 'mascots') mascotWrites.push(w.value)
     return next(e)
   })
   on('ui.open', (_$, e) => {
@@ -333,6 +341,8 @@ export async function world(
     opened,
     closed,
     nowWrites,
+    mascotWrites,
+    dropped,
     toasts,
     files,
     links,

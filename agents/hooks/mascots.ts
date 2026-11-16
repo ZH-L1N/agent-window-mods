@@ -76,6 +76,14 @@ export const ERROR_POOL: readonly PackPose[] = [
 export const HUB_POOL: readonly PackPose[] = ['artboard-25cla', 'multi-window-workflow', 'developer-pair-programming-scene']
 
 /**
+ * The calm pose an ended card rests in (0.5.0, the behaviour ladder): a finished
+ * one's and a failed one's. The finished and error pools are for the three
+ * second reaction to the end only.
+ */
+export const REST_DONE: PackPose = 'with-success-checkmark'
+export const REST_ERROR: PackPose = 'error-state-pixel'
+
+/**
  * The background shell's card mascot: candidate C (`shell-window`), Zehui's
  * pick on 2026-10-19; A (`shell-terminal-face`) is the other choice.
  */
@@ -95,6 +103,9 @@ export const CODEX_POOL: readonly ShellPose[] = [
 export const CODEX_POSE: ShellPose = CODEX_POOL[0] ?? 'fuzzy-blue-beret'
 
 const isShellPose = (pose: Pose): pose is ShellPose => Object.hasOwn(SHELL_POSES, pose)
+
+/** True for a pose name this file draws (a name read back from state may predate a pose's removal). */
+export const isPose = (name: string): name is Pose => Object.hasOwn(POSES, name) || Object.hasOwn(SHELL_POSES, name)
 
 const poseRows = (pose: Pose): readonly string[] => (isShellPose(pose) ? SHELL_POSES[pose] : POSES[pose].rows)
 
