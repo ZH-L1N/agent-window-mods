@@ -10,26 +10,46 @@ stack order; the agents pane (Who, Code, Peers views, mascots per state);
 `/zh`, `/web` with `web_read`, the herdr peer alarm and board; the blast-radius
 fork. See `plans/TIMELINE.md` for the ledger.
 
+## Done (2026-11-16): forks, the strip and comfort
+
+One plan (`plans/2026-11-16-strip-forks-safety.md`), shipped mod by mod:
+
+- **Four audited forks:** `skins` (the transcript skin), `redgreen` (the
+  test results pane), `smart-compact` (the compaction offer) and `breathe`
+  (the breathing band), each pinned, with its local changes numbered in its
+  `PROVENANCE.md`.
+- **The strip:** one row of pills in place of the SYS, PLAN, HANDOFF and
+  CACHE rows; the band's order in one place; context, system and last-turn
+  diff panes; a session-health pill; other mods' panes without a background
+  fill.
+- **Comfort:** the prompt queue (`queue`), image thumbnails under the sent
+  message, the mascot behaviour ladder, and a small file tree (`filetree`).
+
 ## Next, in order
 
-1. ~~Image after send~~ done 2026-10-20: the `images` mod draws a thumbnail
-   row above the stack once a prompt with a pasted image is sent (sips → BMP
-   → half-blocks). A preview before sending stays impossible.
-2. **Safety batch**, one plan:
-   - outbound-send gate: a preview card before any message or email is sent
-     or a deployed app's environment is changed, showing the exact target,
-     mentions and any dates being committed to.
-   - motion-hold: hold every shell or SSH command that moves, energises or
-     restarts lab hardware; one move per approval; a STOP band while it runs.
-   - cross-pane approval alarm: never let a session answer another agent's
-     permission prompt; make a permission-mode escalation loud.
-   - session-health badge: one red or green entry for Remote Control
-     disconnected, login expired, spend limit reached.
-3. **Small conveniences**: dictation de-dupe (merge a voice re-send into the
+1. **Safety batch, built but not landed.** `motion-hold` holds a shell
+   command that would move hardware or disturb a machine, and `send-gate`
+   holds an outbound send in a session that runs without permission
+   prompts. Both are written and tested, and neither is in this repo yet:
+   after the two fix rounds the plan allows, the last review of
+   motion-hold's command matcher still found one way past it that counts as
+   high, and smaller ones. `send-gate` waits with it, since it shares
+   motion-hold's hold kit. Next: one more fix round for the matcher, then
+   both land together. The plan's "Held back and deferred" section and its
+   review log have the details.
+2. **Agents pane:** the messages view behind the numbered card buttons.
+3. **motion-hold, once it has landed:** a stop command (its local config
+   has none yet, so the STOP row is an indicator until one is set), and
+   input given to a whole group or loop (`{ ssh rig-1.local bash; } <
+   run.sh`), which the matcher does not follow yet.
+4. **The guard's skipped events:** a look at what the organization plugin
+   guard's skipped events (`classic.SessionStart`, `prompt.compose`,
+   `session.append`, `session.compact`, `skill.prompt`) cost the existing
+   mods, and whether anything should move to other events.
+5. **Small conveniences:** dictation de-dupe (merge a voice re-send into the
    previous prompt), hands-off turn mode ("just check, don't touch" blocks
    writes for that turn).
-4. **Agents pane**: E3, the messages view behind the numbered card buttons.
-5. **Later**: deploy-watch band, device binding and rig heartbeat chips,
+6. **Later:** deploy-watch band, device binding and rig heartbeat chips,
    protected-paths guard, away mode, outputs shelf, tool-gotcha rewriter.
 
 ## Clicks on buttons
@@ -48,4 +68,8 @@ name), so pictures may start drawing there without any change here.
 ## Not planned
 
 Recording mode (no screen recording needed), pixel-pulse (decorative),
-cache-clock's 5-minute mode beyond the option it has.
+cache-clock's 5-minute mode beyond the option it has. The cross-pane
+approval alarm: a mod cannot see a permission prompt, its own session's or
+another's. A health signal for the Remote Control link: the engine has no
+event or field for it. Mascots drawn by a Client module: a Client cannot
+draw a `Raster`.

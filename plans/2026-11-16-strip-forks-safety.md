@@ -28,6 +28,11 @@ the owner named.
 
 **Status: plan review approved 2026-11-16 02:31** (5 rounds, reviewer pane, 15 findings and 3 questions resolved; log in `plans/fixs/`)
 
+**Status: partly implemented 2026-11-16 11:28.** Phases 0, 1, 3, 5, 6 and 7 are
+committed and pushed. Phase 2 (motion-hold) and phase 4 (send-gate) are
+built and tested but held back: see "Held back and deferred" and the phase
+ledger at the end.
+
 ## Success criteria
 
 One line per thing that was asked for. The final report gives evidence per
@@ -2949,9 +2954,10 @@ edit the file is under `Touched this turn` and carries `M`.
 
 ## Held back and deferred
 
-- TEMP(2026-11-16, until: a third fix round for the matcher is approved and
-  its check passes): phase 2 (motion-hold) and phase 4 (send-gate) are built
-  and tested but not committed. After the two fix rounds this plan allows,
+- TEMP(2026-11-16, until: a third matcher fix round passes its check):
+  phase 2 (motion-hold) and phase 4 (send-gate) are built and tested but
+  not committed; a third fix round needs the owner's approval. After the
+  two fix rounds this plan allows,
   the last check of the matcher still confirmed one high finding and eleven
   smaller ones, all in `motion-hold/hooks/match.ts`; the gate, the card and
   the hold kit are clean. The failure rule above therefore keeps phase 2
@@ -2980,11 +2986,11 @@ Filled in as phases land.
 
 | Phase | Commit | Pushed | Notes |
 | --- | --- | --- | --- |
-| 0 Housekeeping | | | |
-| 1 Forks | | | |
-| 2 Motion-hold | | | |
-| 3 Strip | | | |
-| 4 Send-gate | | | |
-| 5 Queue | | | |
-| 6 Comfort | | | |
-| 7 File tree | | | |
+| 0 Housekeeping | `bfada59` | yes | spec, plan, band-row tests for engine 2.1.325 |
+| 1 Forks | `c83efaf`, `8a27477`, `ee57d20`, `8c1f29f` | yes | skins, redgreen, smart-compact, breathe |
+| 2 Motion-hold | none | no | held back: one high finding left in the matcher after two fix rounds |
+| 3 Strip | `3f860fd`, `699d746`, `f2df7d8` | yes | token-weather 0.1.12, strip 0.1.0, here 0.1.1 |
+| 4 Send-gate | none | no | built and reviewed; waits for phase 2, the home of its hold kit |
+| 5 Queue | `9a0e403` | yes | queue 0.1.0; two low findings deferred |
+| 6 Comfort | `439023a`, `dc80e01` | yes | images 0.3.0, agents 0.5.0 |
+| 7 File tree | `def2ebd` | yes | filetree 0.1.0 |

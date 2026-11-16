@@ -47,10 +47,10 @@ the `strip` mod's single `AbovePromptList` hook (`strip/hooks/order.ts`). Top
 to bottom: the motion-hold mod's row (only while a held command runs; that
 mod is not in this repo yet), breathe, the strip, smart-compact's offer,
 AGENTS, GOAL, HERE, QUEUE, NEXT, IMAGES; a row of any other plugin follows,
-in the order received. While the strip draws,
-the SYS, PLAN, HANDOFF and CACHE rows are left out, since its pills stand in
-for them; the HANDOFF row stays while it has something to act on (the
-threshold is crossed, a save runs, or a resume is on offer).
+in the order received. While the strip draws, the SYS, PLAN, HANDOFF and
+CACHE rows are left out, since its pills stand in for them; the HANDOFF row
+stays while it has something to act on (the threshold is crossed, a save
+runs, or a resume is on offer).
 `/strip rows show` brings the four back under the strip and `/strip rows
 hide` removes them again. Without the strip mod, the rows stand in the
 plugins' load order.
