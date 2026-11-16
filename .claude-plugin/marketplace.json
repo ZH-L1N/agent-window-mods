@@ -224,6 +224,22 @@
         "theme",
         "skin"
       ]
+    },
+    {
+      "name": "redgreen",
+      "source": "./redgreen",
+      "description": "A test results pane: every test run Claude makes (vitest, jest, pytest, cargo, go, bun, deno) becomes a pass/fail list with the failure detail and the session's run history; a failing run opens the pane, a green one updates the status line. /tests, /tests clear. Fork of hellosverre/redgreen v0.1.0.",
+      "author": {
+        "name": "hellosverre"
+      },
+      "repository": "https://github.com/hellosverre/redgreen",
+      "license": "MIT",
+      "category": "productivity",
+      "tags": [
+        "mod",
+        "tests",
+        "pane"
+      ]
     }
   ]
 }

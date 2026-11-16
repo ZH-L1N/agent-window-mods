@@ -1,0 +1,11 @@
+{
+  "name": "redgreen",
+  "version": "0.1.0-zm.1",
+  "description": "Test results pane for Claude Code: every test run Claude makes becomes a pass/fail list with the failure detail and run history. vitest, jest, pytest, cargo, go, bun, deno",
+  "author": { "name": "hellosverre", "url": "https://github.com/hellosverre" },
+  "homepage": "https://github.com/hellosverre/redgreen",
+  "repository": "https://github.com/hellosverre/redgreen",
+  "license": "MIT",
+  "keywords": ["claude-code-mods", "claude-mods", "function-hooks", "tests", "test-runner", "vitest", "jest", "pytest", "cargo", "go", "pane"],
+  "types": "./types/index.d.ts"
+}
