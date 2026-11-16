@@ -5,6 +5,8 @@
 // Local change 10 (zehui-mods): today's tokens before the month figure, their
 // day keys, their drop order and their pruning with the month keys.
 // Local change 11 (zehui-mods): the PLAN row draws only its own keyed row (zm-20-plan).
+// Local change 12 (zehui-mods): the session cost, today's tokens and the month
+// published to $.state under token-weather.totals for other mods.
 import { expect, mock, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import type { On } from 'claude-code'
@@ -58,6 +60,8 @@ type World = {
   compact: (trigger: Trigger, skip?: string) => Promise<unknown>
   /** Local change 10 (zehui-mods): the mocked clock, to cross midnight. */
   clock: ReturnType<typeof mock.clock>
+  /** Local change 12 (zehui-mods): every value the plugin wrote to $.state under token-weather.totals, in order. */
+  totals: unknown[]
 }
 
 /**
@@ -75,6 +79,8 @@ async function world(
   let compactResult: unknown = { messages: kept }
   const store = new Map<string, unknown>(Object.entries(opts.store ?? {}))
   const published: unknown[] = []
+  // Local change 12 (zehui-mods): the totals published for other mods.
+  const totals: unknown[] = []
   const clock = mock.clock(on, { now: T0 })
   on('store.get', (_$, e) => ({ value: store.get((e as { key: string }).key) }) as never)
   on('store.set', (_$, e) => {
@@ -90,6 +96,8 @@ async function world(
   on('state.set', async (_$, e, next) => {
     const w = e as { plugin?: string; key?: string; value?: unknown }
     if (w.plugin === PLUGIN && w.key === 'context') published.push(JSON.parse(JSON.stringify(w.value)))
+    // Local change 12 (zehui-mods).
+    if (w.plugin === PLUGIN && w.key === 'totals') totals.push(JSON.parse(JSON.stringify(w.value)))
     return next(e)
   })
   on('session.id', () => ({ value: opts.sessionId ?? 's1' }) as never)
@@ -109,6 +117,7 @@ async function world(
     store,
     published,
     clock,
+    totals,
     compact: (trigger, skip) => {
       compactResult = skip ? { skip } : { messages: kept }
       return $.session.compact({ trigger, messages: kept } as never)
@@ -380,4 +389,25 @@ test("row: the hook draws this plugin's own row", async ($, on) => {
   expect(zmKeys(tree)).toEqual(['zm-20-plan'])
   expect(await ui.find({ type: 'Text', text: ' ◔ PLAN    ' })).toBeDefined()
   await ui.unmount()
+})
+
+// Local change 12 (zehui-mods): the figures the row draws (session cost, today's
+// tokens, the month) are published to token-weather.totals for other mods.
+test('totals are published for other mods', async ($, on) => {
+  const w = await world($, on, { tokens: 250_000, usd: 12, categories: CATEGORIES })
+  await turn($, 1_000_000)
+  type Totals = {
+    costUsd: number | null
+    today: { ymd: string; tokens: number } | null
+    month: { ym: string; usd: number; tokens: number } | null
+    readAt: number
+  }
+  expect(w.totals.length).toBeGreaterThan(0)
+  const last = w.totals[w.totals.length - 1] as Totals
+  expect(last.costUsd).toBe(12)
+  expect(last.today).toEqual({ ymd: TODAY, tokens: 1_000_000 })
+  expect(last.month?.ym).toBe('2026-10')
+  expect(last.month?.usd).toBe(12)
+  expect(last.month?.tokens ?? 0).toBeGreaterThanOrEqual(1_000_000)
+  expect(last.readAt).toBe(T0)
 })

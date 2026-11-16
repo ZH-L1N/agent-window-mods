@@ -32,3 +32,4 @@
 - 2026-11-16 04:02 | redgreen 0.1.0-zm.1 | shipped | fork of hellosverre/redgreen v0.1.0 (MIT): the Tests pane, unchanged but for the version; 19 tests; installed
 - 2026-11-16 04:02 | smart-compact 0.3.2-zm.1 | shipped | fork of hellosverre/smart-compact v0.3.2 (MIT): /compact-offer, backup off by default, 60-minute cache lifetime, middle-dot separators; 31 tests; installed
 - 2026-11-16 04:04 | breathe 2.0.0-zm.1 | shipped | fork of linxuan-sys/claude-breathe d8cc7b9 (MIT): random pool pulse, wave, melody; 10 s delay; spinner word off; main loop only; tests on the engine's kit; 49 tests; installed
+- 2026-11-16 11:23 | token-weather 0.1.12 | shipped | local change 12: the totals the PLAN row draws (session cost, today's tokens, the month's usage) are published as state token-weather.totals for the strip's context pane; row unchanged; 17 tests; installed

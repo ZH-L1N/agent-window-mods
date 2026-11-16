@@ -30,10 +30,26 @@ export type TokenWeatherContext = {
   readAt: number
 }
 
+// Local change 12 (zehui-mods): the figures the PLAN row draws, published
+// wherever the month is recorded (session.start and after each main-loop turn).
+
+/** The session cost, today's tokens and the month's totals, as the PLAN row draws them. */
+export type TokenWeatherTotals = {
+  /** The session cost the row shows, in USD; null before the API reports one. */
+  costUsd: number | null
+  /** What the row's "today" shows: tokens summed over this machine's sessions for the local date `ymd` (YYYY-MM-DD). */
+  today: { ymd: string; tokens: number } | null
+  /** What the row's month part shows: USD and tokens summed over this machine's sessions for `ym` (YYYY-MM). */
+  month: { ym: string; usd: number; tokens: number } | null
+  /** When the totals were published, `$.clock.now()` milliseconds. */
+  readAt: number
+}
+
 declare module 'claude-code' {
   interface PluginState {
     'token-weather': {
       context: TokenWeatherContext
+      totals: TokenWeatherTotals
     }
   }
 }

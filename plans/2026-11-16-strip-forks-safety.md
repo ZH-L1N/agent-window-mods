@@ -956,6 +956,328 @@ applies only to a segment that names a configured host.
   flag; `classify` is a pure function of its two arguments.
 - [ ] **Step 4: run** the tests. Expected: PASS.
 
+#### Task 5, corrected and extended 2026-11-16 after the phase 2 review
+
+The review ran the matcher against real shell behaviour (stub programs in
+a scratch folder, nothing on any host) and found sixteen groups of
+commands that the rules above let pass, plus four reads they held. The
+rules below are what the matcher now does; where one differs from a rule
+above, this one stands. Cases 74 to 165 pin them (` / ` is a line break;
+the config is the example unless a case says otherwise).
+
+- Normalisation: only the zero-width and soft-hyphen characters are removed before matching; a backslash-newline is joined by the scanner where the shell joins it (between and inside words, in double quotes, in a heredoc body under an unquoted delimiter; not after a comment, not before a carriage return, not under a quoted delimiter), and every pattern is tried on a text as written, with its continuations joined, and with quotes and backslashes removed.
+- Built-in table: a redirect is `>`, `>>`, `>|` or `>&`; `tee|dd ... <path>` and `pio run ... upload` are checks with no limit on the gap (the tee/dd gap may span lines and ends at `|`, `;`, `&`; the pio gap stays on one line); serial paths include `/dev/tty.*`; `.input_(pos|vel|torque)` also holds with `+=`, `-=`, `*=`, `/=`; the upload target may be `--target=upload`; `-T` is a write flag only where the text has `curl`; `kill|pkill|killall` followed at once by `-0`, `-s 0`, `-n 0` or `--signal 0` is not a reason, and a text with both forms still holds.
+- Rule 1: the scanner keeps whether a heredoc delimiter was quoted (an unquoted body is expanded: its variables replaced, its `$( )` and backtick texts taken as substitutions of the segment), keeps the inner text of every substitution (`$( )`, backticks, `<( )`, `>( )`, zsh `=( )`), ends a comment at its newline, and notes a top-level `)`.
+- Rule 2: after a top-level `)` with words after it in the same segment (`pattern) command`, `name() { command`) the command is judged by its own executable and the text before the `)` is tried as raw text with no exemption; `function` is a prefix that takes the name after it; these prefix flags take a value: `exec -a`, `time -o -f --output --format`, `env -u -C --unset --chdir`.
+- Rule 2a (new): a segment that is only `NAME=value` words (after `export` too) carries each literal value forward within its text, replacing `$NAME` and `${NAME}` before the executable, the remote target, redirect targets, bodies and the segment's host are read, when the name is assigned nowhere else in the text, the value holds no variable and is at most 2,000 characters; the text is then read twice (values in place, and as written), every reason of either reading holds and a segment is exempt only when both exempt it, except that a remote-shell target whose carried value names a configured host is certain.
+- Rule 3: ssh (not mosh) goes on skipping option words after the target, `-P` takes a value, `-o RemoteCommand` is remote text, `-o ProxyCommand` and `-o LocalCommand` are local commands, `-o HostName` names the host where the target names none; a body is an interpreter's code only when a bare interpreter is what reads standard input, and where an interpreter is named but a bare shell reads the body (or the interpreter has its own script or `-c`) the body is tried both as a command and as code; a target that is a variable with no carried value keeps the parse uncertain, and so does a carried value that names no configured host.
+- Rule 3a: also unreadable are a heredoc body or here-string that is nothing but variables or substitutions fed to a remote side that reads its program from standard input (through a jump host too), an executable in remote text that is nothing but a variable, and input fed to a remote shell whose target is an unresolved variable when the raw command names a configured host; not readable producers are a `printf` or `echo` whose arguments (after the format, after the flags) are only variables, a `cat` whose body is only variables, any producer with a substitution, the last command of a parenthesised group and a command after a case pattern or function name; `/dev/stdin`, `/dev/fd/0` and `-` as a shell's or interpreter's operand are standard input.
+- Rule 4: a shell's flags before the command are read as the shell reads them (each `o`/`O` of a cluster takes the next word, a `c` in a cluster starts the command string, an `s` means standard input); for an interpreter `-` ends the options whatever follows and `-W -X` (python), `-r --require` (node), `-r -I` (ruby, perl) take a value; the string of `eval` and the action of `trap` are classified as commands of their own, beside rule 6 on the segment.
+- Rule 5: the exemption also ends on an assignment in front of the command other than a locale or terminal setting, on `git -c`/`--config-env`/`--exec-path`/`--ext-diff`/`--textconv`/`-O`/`--open-files-in-pager`, and on a file the command writes through its own arguments (`sort -o`, the second file of `uniq`, `--output`), which is tried against class A like a redirect; a substitution in a heredoc body the shell expands counts as a substitution of the segment, and so does `=( )`.
+- Rule 5a: where the next stage is a shell reading its standard input, a readable producer's text is also classified as a command of its own.
+- Rule 6 (addition): the inner text of every substitution of a segment is classified as a command of its own, beside the segment's verdict and never in place of it, and any reason found ends the segment's exemption.
+- Rule 7: a command too long (over 400,000 characters) or nested too deep (over eight texts) to take apart is decided by the raw text, and when it names a configured host it is held as `unreadable`.
+
+Three choices made in this round, stated once:
+
+- **A read inside a case arm or a function body passes** (case 105). The
+  command after `pattern)` or `name() {` is judged by its own executable,
+  where the first version took the pattern word or the name for it.
+- **A carried variable never takes a hold away**, with one exception: a
+  remote-shell target whose carried value names a configured host is
+  certain, so a read through it passes (case 141). `CMD='grep -c done
+  log'; ssh rig-1.local "$CMD"` is still held as unreadable, although its
+  text is in plain sight.
+- **Two residues stay open.** Options after the ssh host are consumed the
+  way ssh consumes them, so a value flag written without its value
+  swallows the next word (`ssh rig-1.local -c ctl move x` passes: ssh
+  would take `ctl` for the cipher). And `OPTS="-o BatchMode=yes"; ssh
+  $OPTS rig-1.local '<a read>'` is still held, as uncertain.
+
+Signal 0 (`kill -0`, `kill -s 0`, `pkill -0`, `killall -0`) is not a kill:
+it sends nothing and only asks whether a process exists. This exemption
+was added by the orchestrator, not by the review: waiting for a run on a
+rig with `while kill -0 $PID; do sleep 5; done` is an everyday read.
+
+```text
+74. ssh rig-1.local <<< "$CMD" -> hold, unreadable, host rig-1.local
+75. ssh rig-1.local bash <<< "$(cat run.sh)" -> hold, unreadable, host rig-1.local
+76. ssh rig-1.local python3 <<< "$CODE" -> hold, unreadable, host rig-1.local
+77. ssh rig-1.local <<EOF / $(cat run.sh) / EOF -> hold, unreadable, host rig-1.local
+78. ssh rig-1.local bash -s <<EOF / $CMD / EOF -> hold, unreadable, host rig-1.local
+79. ssh rig-1.local 'bash -s' <<< "$(cat run.sh)" -> hold, unreadable, host rig-1.local
+80. ssh rig-1.local bash -c "$CMD" -> hold, unreadable, host rig-1.local
+81. ssh rig-1.local sudo "$CMD" -> hold, unreadable, host rig-1.local
+82. ssh rig-1.local "cd app && $CMD" -> hold, unreadable, host rig-1.local
+83. ssh rig-1.local "$CMD 2>&1" -> hold, unreadable, host rig-1.local
+84. printf '%s\n' "$CMD" | ssh rig-1.local -> hold, unreadable, host rig-1.local
+85. echo -n "$CMD" | ssh rig-1.local bash -> hold, unreadable, host rig-1.local
+86. cat <<< "$CMD" | ssh rig-1.local -> hold, unreadable, host rig-1.local
+87. ssh jump.example ssh rig-1.local <<< "$CMD" -> hold, unreadable, host rig-1.local
+88. ssh rig-1.local 'python3 /dev/stdin' < s.py -> hold, unreadable, host rig-1.local
+89. ssh rig-1.local 'sh /dev/stdin' < s.sh -> hold, unreadable, host rig-1.local
+90. ssh rig-1.local 'GIT_PAGER="sudo reboot" git log' -> hold, power, host rig-1.local
+91. GIT_EXTERNAL_DIFF='ssh rig-1.local sudo reboot' git diff -> hold, power, host rig-1.local
+92. git -c core.pager='ctl move x 1' log -> hold, site
+93. git -c diff.external='ssh rig-1.local sudo reboot' diff -> hold, power, host rig-1.local
+94. LESSOPEN='|ctl move x 1 %s' less f -> hold, site
+95. ssh rig-1.local 'sort -o /sys/class/gpio/gpio17/value one.txt' -> hold, gpio-set, host rig-1.local
+96. uniq g.gcode /dev/ttyUSB0 -> hold, serial-write
+97. git log --output=/dev/ttyUSB0 -> hold, serial-write
+98. case "$MODE" in /   test) ssh rig-1.local 'ctl move x 1' ;; / esac -> hold, site, host rig-1.local
+99. case "$MODE" in true) ssh rig-1.local 'sudo reboot' ;; esac -> hold, power, host rig-1.local
+100. test() { ssh rig-1.local 'ctl move x 1'; }; test -> hold, site, host rig-1.local
+101. r() { ssh rig-1.local "$@"; }; r sudo reboot -> hold, unreadable, host rig-1.local
+102. function r { ssh rig-1.local "$@"; }; r sudo reboot -> hold, unreadable, host rig-1.local
+103. (echo 'sudo reboot'; echo exit) | ssh rig-1.local -> hold, unreadable, host rig-1.local
+104. ssh rig-1.local 'sudo reboot' *(N) ls -> hold, power, host rig-1.local
+105. case "$MODE" in /   status) ssh rig-1.local 'grep -c shutdown log' ;; / esac -> pass, no-match
+106. cat <<EOF / Moved: $(ssh rig-1.local 'ctl move x 10') / EOF -> hold, site, host rig-1.local
+107. grep -c ok <<EOF / `ssh rig-1.local 'ctl home'` / EOF -> hold, site, host rig-1.local
+108. no config: cat <<EOF / $(echo 1 > /sys/class/gpio/gpio17/value) / EOF -> hold, gpio-set
+109. ssh rig-1.local 'cat <<EOF / $(sudo reboot) / EOF' -> hold, power, host rig-1.local
+110. cat <<EOF | ssh rig-1.local bash / $(cat run.sh) / EOF -> hold, unreadable, host rig-1.local
+111. ls =(ssh rig-1.local 'sudo reboot') -> hold, power, host rig-1.local
+112. cat <<'EOF' / Moved: $(ssh rig-1.local 'ctl move x 10') / EOF -> pass, read-only
+113. ssh rig-1.local 'bash -euo pipefail' < run.sh -> hold, unreadable, host rig-1.local
+114. cat run.sh | ssh rig-1.local 'bash -euo pipefail' -> hold, unreadable, host rig-1.local
+115. ssh rig-1.local 'python3 - x 10' < move.py -> hold, unreadable, host rig-1.local
+116. ssh rig-1.local 'bash -es -- prod' < run.sh -> hold, unreadable, host rig-1.local
+117. bash -euo pipefail -c 'ssh rig-1.local bash < run.sh' -> hold, unreadable, host rig-1.local
+118. bash -euo pipefail -c "ssh rig-1.local 'grep -c shutdown log'" -> pass, read-only
+119. ssh -o RemoteCommand='ctl move x 1' rig-1.local -> hold, site, host rig-1.local
+120. ssh -oRemoteCommand='sudo reboot' rig-1.local -> hold, power, host rig-1.local
+121. ssh -o ProxyCommand='ssh rig-1.local sudo reboot' other.example ls -> hold, power, host rig-1.local
+122. ssh -o HostName=rig-1.local x 'sudo reboot' -> hold, power, host rig-1.local
+123. ssh rig-1.local -T < run.sh -> hold, unreadable, host rig-1.local
+124. ssh rig-1.local -tt bash < run.sh -> hold, unreadable, host rig-1.local
+125. ssh rig-1.local -t "$CMD" -> hold, unreadable, host rig-1.local
+126. ssh rig-1.local -t 'grep -c shutdown log' -> pass, read-only
+127. ssh -P tag rig-1.local 'cd app; sudo reboot' -> hold, power, host rig-1.local
+128. exec -a ls ssh rig-1.local 'sudo reboot' -> hold, power, host rig-1.local
+129. /usr/bin/time -o file ssh rig-1.local 'sudo reboot' -> hold, power, host rig-1.local
+130. env -u NAME ssh rig-1.local bash < run.sh -> hold, unreadable, host rig-1.local
+131. echo 1 >| /sys/class/gpio/gpio17/value -> hold, gpio-set
+132. ssh rig-1.local 'ctl status' >| /dev/ttyUSB0 -> hold, serial-write
+133. echo 1 | sudo tee -a /tmp/<420 characters> /sys/class/gpio/gpio17/value -> hold, gpio-set
+134. pio run --project-dir /tmp/<420 characters> -t upload -> hold, flash
+135. no config: python3 - <<'PY' / import subprocess / subprocess.run(['sudo', 'tee', /   '/sys/class/gpio/gpio17/value'], input=b'1') / PY -> hold, gpio-set
+136. python3 - <<'PY' / import subprocess / subprocess.run([ /     "dd", /     "if=frame.bin", /     "of=/dev/ttyUSB0", / ]) / PY -> hold, serial-write
+137. BASE=http://rig-1.local:8080; curl -s -X POST "$BASE/api/move" -d '{"x":10}' -> hold, http-write, host rig-1.local
+138. H=rig-1.local; ssh $H 'bash -s' < run.sh -> hold, unreadable, host rig-1.local
+139. H=rig-1.local; ssh "$H" "$CMD" -> hold, unreadable, host rig-1.local
+140. SSH="ssh rig-1.local"; $SSH 'sudo reboot' -> hold, power, host rig-1.local
+141. H=rig-1.local; ssh $H 'grep -c shutdown log' -> pass, no-match
+142. export HOST=rig-1.local; curl -X POST "http://${HOST}:8080/api/move" -d '{}' -> hold, http-write, host rig-1.local
+143. for h in rig-1.local 10.0.0.9; do ssh $h bash < run.sh; done -> hold, unreadable, host rig-1.local, isCertain false
+144. OUT=$(ssh rig-1.local 'bash -s' < run.sh) -> hold, unreadable, host rig-1.local
+145. echo "$(cat run.sh | ssh rig-1.local bash)" -> hold, unreadable, host rig-1.local
+146. eval "ssh rig-1.local bash < run.sh" -> hold, unreadable, host rig-1.local
+147. echo "ssh rig-1.local bash < run.sh" | bash -> hold, unreadable, host rig-1.local
+148. trap "ssh rig-1.local bash < run.sh" EXIT -> hold, unreadable, host rig-1.local
+149. diff <(ssh rig-1.local bash < run.sh) expected.txt -> hold, unreadable, host rig-1.local
+150. # restart the rig \ / ssh rig-1.local 'sudo reboot' -> hold, power, host rig-1.local
+151. echo a \<CR> / ssh rig-1.local 'sudo reboot' -> hold, power, host rig-1.local
+152. cat <<'EOF' > /dev/null / note \ / EOF / ssh rig-1.local 'sudo reboot' / cat <<'EOF' / x / EOF -> hold, power, host rig-1.local
+153. cd /tmp && \ / # restart the app \ / ssh rig-1.local 'sudo systemctl restart app' -> hold, service, host rig-1.local
+154. ssh rig-1.local 'python3 prep.py; bash' <<'EOF' / sudo reboot / EOF -> hold, power, host rig-1.local
+155. ssh rig-1.local 'node -v; sh' <<< 'pkill -f bench' -> hold, kill, host rig-1.local
+156. 450,000 characters of `echo ok; ` then ssh rig-1.local bash < run.sh -> hold, unreadable, host rig-1.local, isCertain false
+157. wget -T 5 http://rig-1.local:8080/api/status -> pass, no-match
+158. ssh rig-1.local 'wget -q -T 5 -O- http://localhost:8080/api/status' -> pass, no-match
+159. echo G1 X10 > /dev/tty.usbmodem14101 -> hold, serial-write
+160. python3 -c "axis.controller.input_pos += 1" -> hold, motor-api
+161. pio run --target=upload -> hold, flash
+162. ssh rig-1.local 'while kill -0 2186 2>/dev/null; do sleep 5; done; echo done' -> pass, no-match
+163. ssh rig-1.local 'kill -0 2186 && kill 2186' -> hold, kill, host rig-1.local
+164. ssh rig-1.local 'kill -s 0 2186' -> pass, no-match
+165. ssh rig-1.local 'kill -9 2186' -> hold, kill, host rig-1.local
+```
+
+#### Task 5, corrected again 2026-11-16 after the phase 2 re-review
+
+The first fix round was re-reviewed in full (three lenses, each finding
+checked by a skeptic, both versions of the matcher run over generated
+commands). The gate, the Monitor hold and the hold kit came back clean;
+the matcher did not: twelve confirmed findings in nine groups, most of
+them commands the first version held and the first fix round let pass (a
+substitution inside `${...}` in double quotes, a `)` taken for a case
+pattern, a line continuation after a redirect sign, bash's long options
+written with one dash, signal 0 followed by another signal), plus an
+internal error that dropped a hold and a nested `eval` shape that overran
+the hook's time. The second and last fix round fixed all nine. The rules
+below are what the matcher now does; where one differs from a rule above,
+this one stands. Cases 166 to 259 pin them.
+
+- Normalisation: a backslash-newline is also joined after a redirect sign before its target, here-string or heredoc delimiter, inside a redirect sign (`>\`+`|`, `<\`+`<`, `<\`+`(`), between a file descriptor and its sign, between `$` and the `(` or the name behind it, and inside a variable's name; inside `$'...'` the pair is kept for the next shell to join (bash) and the text is also read with the backslash dropped (zsh).
+- Built-in table: `kill|pkill|killall` with signal 0 is not a reason only when no later word of the same command, up to the next `;`, `&`, `|` or newline and before a lone `--`, starts with `-`, other than a cluster of pkill's match flags (`-f -x -i -n -o -a -e -l`) and what stands inside a plain substitution; signal 0 is spelled `-0` or `--signal 0` for all three, `-s 0` for `kill` and `killall` only, `-n 0` for `kill` only.
+- Rule 1: a `${` runs to the brace that closes it, past a nested `${ }`, `$( )`, backticks and quotes, and a substitution inside its braces is a substitution of the segment inside double quotes too; a pair of parentheses glued into a word, or opening a word behind a command, is part of that word, and what it holds is a substitution of the segment unless it is plain glob text; a process substitution right after a redirect sign is that redirect's target; the scanner follows `case`, `in`, `;;`, `;&`, `;;&` and `esac`; quoted substitutions nested more than 200 deep in one word count as not closed.
+- Rule 2: the cut is made only at the `)` that ends a case pattern (where the clause is due one) and at the empty `()` after a function's name; the text before the cut is tried as raw text and also classified as a text of its own, and the segment is exempt only when that text is exempt too; any other top-level `)` ends its group's last command, so a word after it starts a command of its own, and so do zsh's `}` in `{ command }` and `]]` before a word.
+- Rule 2a: the assignment may stand behind `{`, `do`, `then`, `else`, `elif`, `if`, `while`, `until`, `!`, a case pattern or a function's name, and may be made with `local`, `declare`, `typeset` or `readonly` (flags `-g -r -x` only); a use of the name glued to a dash does not stop it; the value is also put in place inside the text of a substitution and a process substitution, the strings of `eval` and `trap`, and the `-c` string, here-string and quoted heredoc body of a local shell, each read with the values in place beside the text as written; only a plain or flagless `export` assignment that is the whole of its segment, with its name standing nowhere else, makes a remote-shell target certain.
+- Rule 3a: a remote side that reads its program from standard input and is fed a process substitution (`< <(command)`) is unreadable like one fed a file, and the substitution's text is tried against every class with the stage's host.
+- Rule 4: a shell's long options written with one dash (`-login -noprofile -norc -posix -restricted -verbose -noediting -debugger`; `-rcfile` and `-init-file` with a value) are options; where no `-c` is found that way, the first `-...c...` word before the first word that is neither an option nor an option's value starts a command string that is classified beside the segment's verdict; the first non-option word after `-c` is classified alone as well as together with the words after it.
+- Rule 6 (addition): each distinct substitution, `eval` and `trap` text of a segment is classified once.
+- Rule 7: an internal error, a text handed to the reader after the command has had 1,200,000 characters of reading, and a text with a `${...}` in double quotes that two shells close at different braces are decided like a text too deep to take apart: by the raw text, and held as `unreadable` when it names a configured host (past the budget: when the whole command does).
+- Two readings (new): where the scanner reads a text differently from the scanner of the first review round, the text is also read that earlier way; every reason of either reading holds, the text is exempt only when both readings exempt it, and the earlier reading's own doubt adds the raw text's reasons without making the verdict uncertain.
+
+Choices made in this round, stated once:
+
+- **No hold of the first fix round is lost, at the price of a few reads.**
+  Where the scanner now cuts a text into words differently, the text is
+  also read the earlier way and the reasons of both readings hold. So
+  `if (ssh rig-1.local 'grep -c shutdown log') then echo ok; fi` is still
+  held, although it is a read. The second reading can be taken out later
+  if these false holds turn out to matter: over the 4,421 shell commands
+  of this machine's own session history, the first fix round and this one
+  give the same verdict for every command.
+- **A value from the new assignment forms is weak.** An assignment behind
+  `{`, `then`, `do`, a case pattern or a function's name, or made with
+  `local`, `declare`, `typeset` or `readonly`, adds holds and names a
+  host, and never makes a remote target certain: `{ H=rig-1.local; ssh $H
+  'grep -c shutdown log'; }` stays held as uncertain.
+- **Signal 0 is read per program.** `-s 0` is a signal for `kill` and
+  `killall` and a session for `pkill`; `-n 0` is a signal for `kill` only.
+  So `pkill -s 0 bench` and `pkill -n 0` are held as the kills they are.
+  A cluster of pkill's own match flags after the signal does not end the
+  exemption (`pkill -0 -f bench` passes); any other later option does.
+- **Two more classes of read pass that the first version held**, beside
+  those listed in the first correction: a read after a group's `)`
+  (`if ((1)) then ssh rig-1.local 'grep -c shutdown log'; fi`), which the
+  first version glued onto the command before it, and case 151's
+  backslash before a carriage return.
+- **The work budget** of one classify call is 1,200,000 characters handed
+  to the reader (three times the parse limit); past it rule 7 decides.
+
+Limits that stay, each listed in the mod's README under "What it cannot
+see": input given to a whole group or loop (`{ ssh rig-1.local bash; } <
+run.sh`, `while read l; do ssh rig-1.local bash; done < run.sh`), which
+needs group-level input tracking and goes on the roadmap; a value used
+before its assignment, or set by `${NAME:=value}`; a carried value inside
+an interpreter's code; a command put together at run time (brace
+expansion, a signal option in a variable); a variable inside remote read
+text that is set outside the command (`ssh rig-1.local "ls $X"`); and a
+script run by name on the host, also from inside a heredoc. New false
+holds, all rare: `kill -0 1 kill -0 1` with no separator, `pkill -0 -u
+root -f x` (a flag with a value), two `${...:-it's}` defaults in one
+double-quoted string that names a host, and a glob qualifier with a
+modifier (`*(N:t)`), which ends the read-only exemption.
+
+Tests added in `hooks/match.test.ts` (347 in the mod after this round):
+one per row 166 to 259; "an internal error holds a text that names a
+configured host"; "further forms of the second round are held, each for
+its kind" (50 commands); "reads in the spellings of the second round
+pass" (24 commands); "nested eval and trap strings stay within the time a
+hook has" (7 shapes, 600 ms each); "the forms the second round reads take
+time proportional to their length" (23 shapes).
+
+The proof kept with the round (outside the repo): the first version, the
+first fix round and the second were run side by side over 6,743,926
+generated commands. Nothing the first fix round held passes now except
+1,370 reads behind a one-dash long option, each of which passed before
+once the option is taken out; every command the first version held and
+this one passes falls in a class of read named in this plan; a copy whose
+error handler rethrows raised no internal error; the slowest command took
+296 ms at 375,018 characters.
+
+```text
+166. echo "${OUT:-$(ssh rig-1.local 'ctl move x 1')}" -> hold, site, host rig-1.local
+167. test -n "${OUT:=$(ssh rig-1.local 'ctl move x 1')}" && echo moved -> hold, site, host rig-1.local
+168. ssh rig-1.local 'echo "${OUT:-$(sudo reboot)}"' -> hold, power, host rig-1.local
+169. echo "${OUT:-`ssh rig-1.local 'ctl move x 1'`}" -> hold, site, host rig-1.local
+170. echo "${X:+$(ssh rig-1.local 'ctl move x 1')}" -> hold, site, host rig-1.local
+171. echo "${arr[$(ssh rig-1.local 'ctl move x 1')]}" -> hold, site, host rig-1.local
+172. X="${X:-$(ssh rig-1.local bash < run.sh)}" -> hold, unreadable, host rig-1.local
+173. ssh rig-1.local 'ctl stop "${X:-$(sudo reboot)}"' -> hold, power, host rig-1.local
+174. echo "${V:-$(echo 1 > /sys/class/gpio/gpio17/value)}" -> hold, gpio-set, host null
+175. [ "${RESULT:=$(ssh rig-1.local 'ctl home')}" = ok ] && echo homed -> hold, site, host rig-1.local
+176. echo "${OUT:-$(ssh rig-1.local 'ctl move x 1' | awk '{print $1}')}" -> hold, site, host rig-1.local, certain
+177. ssh rig-1.local 'bash -s' < run.sh *(N) ls -> hold, unreadable, host rig-1.local
+178. ssh rig-1.local bash -s *(N) x < run.sh -> hold, unreadable, host rig-1.local
+179. ssh rig-1.local bash -s < run.sh x(N) y -> hold, unreadable, host rig-1.local
+180. ssh rig-1.local bash -s < run.sh !(x) y -> hold, unreadable, host rig-1.local
+181. cat run.sh | ssh rig-1.local 'bash -s' *(N) x -> hold, unreadable, host rig-1.local
+182. if (echo 'ctl move x 1' | ssh rig-1.local bash) then echo ok; fi -> hold, site, host rig-1.local
+183. if (ssh rig-1.local 'bash -s' < run.sh) then echo ok; fi -> hold, unreadable, host rig-1.local
+184. for i in 1 2; do (cat run.sh | ssh rig-1.local bash -s) done -> hold, unreadable, host rig-1.local
+185. ssh rig-1.local '{ (bash -s) }' < run.sh -> hold, unreadable, host rig-1.local
+186. if (ssh rig-1.local bash <<'EOF') then echo ok; fi / ctl move x 1 / EOF -> hold, site, host rig-1.local
+187. if (ssh rig-1.local <<'EOF') then echo ok; fi / sudo reboot / EOF -> hold, power, host rig-1.local
+188. ssh rig-1.local bash < run.sh; <5,000 times "$(><5,000 times )"> -> hold, unreadable, host rig-1.local, isCertain false
+189. ssh rig-1.local bash < run.sh; <20,000 times "$(><20,000 times )"> -> hold, unreadable, host rig-1.local, isCertain false
+190. ssh rig-1.local "$CMD"; echo <20,000 times "$(> -> hold, unreadable, host rig-1.local, isCertain false
+191. cat run.sh | ssh rig-1.local bash; echo <20,000 times "$(> -> hold, unreadable, host rig-1.local, isCertain false
+192. ssh rig-1.local "$CMD"; echo <16,000 times "$(><16,000 times )"> -> hold, unreadable, host rig-1.local, isCertain false
+193. ssh rig-1.local bash < run.sh; bash -n -c '<20,000 times "$(>' -> hold, unreadable, host rig-1.local, isCertain false
+194. ssh rig-1.local '<125,000 times $A;>' -> hold, unreadable, host rig-1.local
+195. BASE=http://rig-1.local:8080; RESP=$(curl -s -X POST "$BASE/api/move" -d '{"x":10}'); echo "$RESP" -> hold, http-write, host rig-1.local
+196. BASE=http://rig-1.local:8080; RESP=`curl -s -X POST "$BASE/api/move" -d 1`; echo "$RESP" -> hold, http-write, host rig-1.local
+197. BASE=http://rig-1.local:8080; echo "answer: $(curl -s -X POST "$BASE/api/move" -d 1)" -> hold, http-write, host rig-1.local
+198. BASE=http://rig-1.local:8080; if [ "$(curl -s -o /dev/null -X POST "$BASE/api/move" -d 1)" = 200 ]; then echo ok; fi -> hold, http-write, host rig-1.local
+199. BASE=http://rig-1.local:8080; diff <(curl -s -X POST "$BASE/api/move" -d 1) expected.json -> hold, http-write, host rig-1.local
+200. export HOST=rig-1.local; CODE=$(curl -X POST "http://${HOST}:8080/api/move" -d '{}') -> hold, http-write, host rig-1.local
+201. BASE=http://rig-1.local:8080 / RESP=$(curl -s -X POST "$BASE/api/move" -d '{"x":10}') / echo "$RESP" -> hold, http-write, host rig-1.local
+202. BASE=http://rig-1.local:8080; ID=$(curl -s -X POST "$BASE/api/jobs" -d 1 | jq -r .id) -> hold, http-write, host rig-1.local
+203. SSH="ssh rig-1.local"; OUT=$($SSH 'sudo reboot') -> hold, power, host rig-1.local
+204. SSH="ssh rig-1.local"; OUT=$($SSH 'sudo systemctl restart app') -> hold, service, host rig-1.local
+205. SSH="ssh rig-1.local"; OUT=$($SSH 'pkill -f bench') -> hold, kill, host rig-1.local
+206. SSH="ssh rig-1.local"; OUT=$($SSH 'bash -s' < run.sh) -> hold, unreadable, host rig-1.local
+207. RIG=rig-1.local; X=$(docker -H "tcp://$RIG:2375" restart app) -> hold, service, host rig-1.local
+208. BASE=http://rig-1.local:8080; eval 'curl -s -X POST "$BASE/api/move" -d 1' -> hold, http-write, host rig-1.local
+209. BASE=http://rig-1.local:8080; trap 'curl -s -X POST "$BASE/api/move" -d 1' EXIT -> hold, http-write, host rig-1.local
+210. H=rig-1.local; curl -H 'Content-Type: application/json' -X POST "http://$H:8080/api/move" -d '{}' -> hold, http-write, host rig-1.local
+211. ssh rig-1.local bash < \ /   run.sh -> hold, unreadable, host rig-1.local
+212. cat run.sh | ssh rig-1.local bash > \ /   /dev/null -> hold, unreadable, host rig-1.local
+213. cat run.sh | ssh rig-1.local bash &> \ /   out.log -> hold, unreadable, host rig-1.local
+214. ssh rig-1.local bash 2> \ /   /dev/null < run.sh -> hold, unreadable, host rig-1.local
+215. ssh rig-1.local $'ctl mo\ / ve x 1' -> hold, site, host rig-1.local
+216. echo $\ / (ssh rig-1.local 'sudo reboot') -> hold, power, host rig-1.local
+217. ssh rig-1.local bash < <(cat run.sh) -> hold, unreadable, host rig-1.local
+218. cat run.sh | ssh rig-1.local bash >> \ /   out.log -> hold, unreadable, host rig-1.local
+219. ssh rig-1.local <<< \ /   "$CMD" -> hold, unreadable, host rig-1.local
+220. ssh rig-1.local bash << \ /   EOF / $CMD / EOF -> hold, unreadable, host rig-1.local
+221. diff <\ / (ssh rig-1.local bash < run.sh) expected.txt -> hold, unreadable, host rig-1.local
+222. f() { BASE=http://rig-1.local:8080; curl -s -X POST "$BASE/api/move" -d '{"x":10}'; }; f -> hold, http-write, host rig-1.local
+223. { BASE=http://rig-1.local:8080; curl -s -X POST "$BASE/api/move" -d 1; } -> hold, http-write, host rig-1.local
+224. if true; then BASE=http://rig-1.local:8080; curl -s -X POST "$BASE/api/move" -d 1; fi -> hold, http-write, host rig-1.local
+225. for x in 1 2; do BASE=http://rig-1.local:8080; curl -s -X POST "$BASE/api/move" -d 1; done -> hold, http-write, host rig-1.local
+226. case "$1" in go) BASE=http://rig-1.local:8080; curl -s -X POST "$BASE/api/move" -d 1 ;; esac -> hold, http-write, host rig-1.local
+227. { DEV=/dev/ttyUSB0; echo G1 X10 > "$DEV"; } -> hold, serial-write, host null
+228. local BASE=http://rig-1.local:8080; curl -s -X POST "$BASE/api/move" -d 1 -> hold, http-write, host rig-1.local
+229. move() { /   local BASE=http://rig-1.local:8080 /   curl -s -X POST "$BASE/api/move" -d 1 / } / move -> hold, http-write, host rig-1.local
+230. case "$1" in /   go) BASE=http://rig-1.local:8080 /     curl -s -X POST "$BASE/api/move" -d 1 ;; / esac -> hold, http-write, host rig-1.local
+231. readonly BASE=http://rig-1.local:8080; curl -s -X POST "$BASE/api/move" -d 1 -> hold, http-write, host rig-1.local
+232. declare BASE=http://rig-1.local:8080; curl -s -X POST "$BASE/api/move" -d 1 -> hold, http-write, host rig-1.local
+233. declare -r BASE=http://rig-1.local:8080; curl -s -X POST "$BASE/api/move" -d 1 -> hold, http-write, host rig-1.local
+234. typeset BASE=http://rig-1.local:8080; curl -s -X POST "$BASE/api/move" -d 1 -> hold, http-write, host rig-1.local
+235. while read -r line; do BASE=http://rig-1.local:8080; curl -X POST "$BASE/api/move" -d "$line"; done < moves.txt -> hold, http-write, host rig-1.local
+236. { PIN=/sys/class/gpio/gpio17/value; echo 1 | sudo tee "$PIN"; } -> hold, gpio-set, host null
+237. { SSH="ssh rig-1.local"; $SSH 'sudo reboot'; } -> hold, power, host rig-1.local
+238. { RUN="ssh rig-1.local"; $RUN bash < run.sh; } -> hold, unreadable, host rig-1.local
+239. bash -login -c "ssh rig-1.local bash < run.sh" -> hold, unreadable, host rig-1.local
+240. bash -noprofile -c "ssh rig-1.local bash < run.sh" -> hold, unreadable, host rig-1.local
+241. bash -posix -c "ssh rig-1.local bash < run.sh" -> hold, unreadable, host rig-1.local
+242. zsh -oshwordsplit -c "ssh rig-1.local bash < run.sh" -> hold, unreadable, host rig-1.local
+243. bash -login -c "ssh rig-1.local 'grep -c shutdown log'" -> pass, read-only
+244. bash -verbose -c "ssh rig-1.local bash < run.sh" -> hold, unreadable, host rig-1.local
+245. bash -noediting -c "ssh rig-1.local bash < run.sh" -> hold, unreadable, host rig-1.local
+246. bash -restricted -c "ssh rig-1.local bash < run.sh" -> hold, unreadable, host rig-1.local
+247. bash -rcfile F -c "ssh rig-1.local bash < run.sh" -> hold, unreadable, host rig-1.local
+248. bash -init-file F -c "ssh rig-1.local bash < run.sh" -> hold, unreadable, host rig-1.local
+249. bash -noprofile -norc -c "ssh rig-1.local bash < run.sh" -> hold, unreadable, host rig-1.local
+250. sh -login -c "ssh rig-1.local bash < run.sh" -> hold, unreadable, host rig-1.local
+251. ssh rig-1.local bash -login -c "$CMD" -> hold, unreadable, host rig-1.local
+252. bash -login -c 'ssh rig-1.local "ctl stop $(sudo reboot)"' -> hold, power, host rig-1.local
+253. ssh rig-1.local 'kill -0 -s KILL 2186' -> hold, kill, host rig-1.local
+254. ssh rig-1.local 'kill -s 0 -s 9 2186' -> hold, kill, host rig-1.local
+255. ssh rig-1.local 'pkill -0 --signal KILL -f bench' -> hold, kill, host rig-1.local
+256. ssh rig-1.local 'pkill -0 -f bench --signal 9' -> hold, kill, host rig-1.local
+257. ssh rig-1.local 'killall -0 bench -s KILL' -> hold, kill, host rig-1.local
+258. ssh rig-1.local 'kill -0 2186' -> pass, no-match
+259. ssh rig-1.local 'kill -0 -- -2186' -> pass, no-match
+```
+
+Case 25 is now written as the table gives it: 25. 20,007 characters of whole `echo ok; ` commands then ssh rig-1.local 'ctl home' -> hold, site, host rig-1.local, certain.
+
 ### Task 6: the hold kit (`motion-hold/hooks/hold.ts`)
 
 One hold at a time, a pane when it can be placed, the engine's question
@@ -1022,6 +1344,18 @@ interrupted"; error "the hold failed".
    `'interrupted'` when the signal aborted, else `'cancel'`.
 6. Any throw: `'error'`. In `finally`: close the pane if it was placed (in
    try/catch), free the slot, invalidate.
+   *Corrected 2026-11-16 after the phase 2 review:* the pane is closed
+   whenever its open resolved, placed or not. A pane opened on a narrow
+   terminal waits undrawn, and one left open appeared later as an empty
+   card.
+7. *Added 2026-11-16 after the reviews of both gates.* A `Slot` also carries
+   `shownAt: number | null`, the clock time at which `where` became `pane`
+   or `dialog` (null while waiting), and the kit exports `READ_MS = 1500`
+   and `canApprove(slot, now)`: true only for a hold that is on screen and
+   has been for `READ_MS`. The slash twin that approves uses it (Task 7,
+   Task 13), so a typed approval can never land on a hold that took the
+   slot a moment ago and that the person has not read. A press of the
+   pane's button carries the slot's id and needs no such rule.
 
 - [ ] **Step 1: write the failing tests** in `hold.test.ts`, each with a
   hand-made `HoldEngine` stub whose `process.run` advances a fake clock by
@@ -1103,6 +1437,12 @@ declare module 'claude-code' {
   `motion-hold: the site config is broken, remote commands are held (/motion status)`.
 - **The gate:** `on('tool.call', { tool: 'Bash' }, ...)` with the fail-closed
   catch.
+  *Corrected 2026-11-16 after the phase 2 review:* the gate stands on
+  `Bash` and on `Monitor`. The Monitor tool takes a `command` too (a shell
+  command whose output lines are events), and a watch started that way ran
+  with no card. A Monitor call with a command is classified and held like
+  a Bash command; one with only a WebSocket passes; an approved one is
+  recorded as a background entry, since the watch outlives the call.
   1. `verdict = classify(String(e.command ?? ''), read)`.
   2. Record a `MotionSeen` when the verdict holds or `hostOf` finds a host
      in the command (`recent` keeps the newest 30; `command` is
@@ -1156,6 +1496,10 @@ declare module 'claude-code' {
   - `run` and `cancel`: answer the pending hold. Honoured only when
     `e.origin.kind` is `composer` or `bridge`; any other origin answers
     `Only the person can answer a hold.` and changes nothing.
+    *Corrected 2026-11-16 after the reviews of both gates:* `run` approves
+    only a hold the kit's `canApprove` allows (Task 6, step 7); otherwise
+    it answers `A new hold just appeared: read it, then answer again.` and
+    approves nothing. `cancel` needs no such rule.
   - `stop`, `clear`, `reload` as above; `stop` has the same origin rule.
 
 - [ ] **Step 1: write `test-kit.ts`** in the house shape: `world($, on, shape)`
@@ -1263,6 +1607,12 @@ export type TokenWeatherTotals = {
   readAt: number
 }
 ```
+
+A reader shows `today` only while `today.ymd` is the local day of its own
+clock, as the row does; totals are published at a session start and after a
+main-loop turn, so a session left idle past midnight still holds
+yesterday's sum. *(Added 2026-11-16 after the phase 3 review: the strip's
+context pane printed it as today's.)*
 
 - [ ] **Step 1: write the failing test** "totals are published for other
   mods": after `session.start` and one main-loop turn with usage, the
@@ -1595,11 +1945,17 @@ words where (for `/strip sources`).
 - cache: `lastCacheAt + cacheMinutes * 60000 - max(now, cache-clock.now,
   strip.now)`; `lastCacheAt` 0 or absent gives null.
 - `keepHandoff`: `handoff.isOver === true`, or `handoff.save.phase` is
-  defined and not `'idle'`, or `handoff.offer` is not null. It is also true
-  when the state cannot be read: any of the three reads threw, or
-  `handoff.isOver` came back `undefined`. `arrangeRows` only ever keeps a
-  HANDOFF row that is present, so "unreadable" errs on the side of showing
-  it.
+  defined and not `'idle'`, or `handoff.offer` is neither null nor
+  undefined. It is also true when the state cannot be read: any of the
+  three reads threw. `arrangeRows` only ever keeps a HANDOFF row that is
+  present, so "unreadable" errs on the side of showing it. A value that
+  reads `undefined` was never written and counts as its owner's initial
+  value (not over, idle, no offer).
+  *Corrected 2026-11-16 after the phase 3 review:* this bullet first
+  counted an `undefined` `isOver` as unreadable. handoff writes `isOver`
+  only when the fill crosses its threshold or after a clear, so in an
+  ordinary session the flag is never written, and the row would have stayed
+  under the strip from the first prompt on.
 
 **Hooks in `register.tsx`:**
 
@@ -1620,7 +1976,11 @@ words where (for `/strip sources`).
   the diff state and re-read usage; otherwise stop the tick.
 - `tool.call` with `{ tool: ['Edit', 'Write'] }`: after `next(e)`, when the
   call was applied, push `stepOf(e.tool, res.result)` onto `steps` (newest
-  `STEP_CAP` kept). Subagent edits count.
+  `STEP_CAP` kept). Subagent edits count. An edit applied while no
+  main-loop turn runs (`turnAt` is null: a background subagent's) is
+  appended to `last` instead, newest `STEP_CAP` kept, so the next
+  `turn.start` does not drop it. *(Added 2026-11-16 after the phase 3
+  review.)*
 - `ui.render` `AbovePrompt`: the strip row. `fitStrip(facts,
   e.props.bodyColumns, turnAt === null ? 0 : WORK_W)`. Each pill is a
   `plain` Button with no hotkey, key `sp-<id>`, whose children are the cap
@@ -1720,7 +2080,7 @@ line per pill naming its source, and whether old rows are hidden);
   13b. "a HANDOFF row whose state cannot be read stays": `shape.broken`
       lists `handoff.isOver` and `handoff.offer`; with a handoff row in the
       list it is kept right after the strip. With every handoff value read
-      as idle, the row is hidden.
+      as idle, or never written at all, the row is hidden.
   14. "nothing is hidden when the strip did not draw": a survey, the
       desktop surface, and a list without a strip row each pass the rows
       on unchanged.
@@ -1848,7 +2208,7 @@ export type SendSeen = { at: number; tool: string; kind: SendKind; verdict: 'sen
 declare module 'claude-code' {
   interface PluginState {
     'send-gate': {
-      mode: Mode; modeFrom: 'event' | 'settings' | 'none'
+      mode: Mode; modeFrom: 'event' | 'env' | 'settings' | 'none'
       recent: SendSeen[]
       config: { status: 'none' | 'ok' | 'broken'; path: string; gate: number; error: string }
     }
@@ -1896,6 +2256,39 @@ declare module 'claude-code' {
   every scalar argument as `[key, value]`, the value cut to 80 characters
   and shown as `••••` when the key matches
   `/key|token|secret|password|credential/i`.
+  *Corrected 2026-11-16 after the phase 4 review.* The key lists above
+  were written from snake_case names; the connected tools use other names
+  (a calendar event has `startTime`, `endTime`, `calendarId`, `summary`,
+  `description`; a mail reply `messageId`, `replyAll`, `htmlBody`; a mail
+  send may carry only a `draftId`; an issue comment `issueIdOrKey`,
+  `commentBody`), so the card said `Dates none` and `Text none` for calls
+  that carried both. Three changes: (1) keys are compared with case, `_`
+  and `-` ignored, and the lists gain `calendarid`, `issueidorkey`,
+  `draftid`, `messageid`, `replythreadid`, `replyall` (targets);
+  `htmlbody`, `commentbody`, `description`, `summary` (bodies); `duedate`
+  (dates). (2) `body` is every body value present, joined in the lists'
+  order, and mentions and dates are read from all of it. (3) For every
+  kind, not only `site`, `fields` holds each argument that no target,
+  body or date key used: a scalar as it is, an array or an object as
+  compact JSON, cut to 80 characters, secrets masked; so an argument the
+  lists do not know is still on the card. When the call carries no body
+  key at all the card says `Text not in this call` (a saved draft, for
+  example) instead of `Text none`.
+  *Corrected again 2026-11-16 after the re-review of that fix.* Listing
+  every argument pushed the `Text` line past the eight lines the narrow
+  terminal's dialog shows. So: the card's lines are, in order, the tool
+  (kinds other than `site`), the subagent line when there is one, `To`,
+  `Mentions`, `Dates`, `Text`, and then ONE line `Also k: v · k: v` that
+  holds every other argument, cut to 300 characters with the mark; the
+  kit's dialog says how many lines it leaves out when a card is longer
+  than it shows. In every value shown, a line break (`\n`, `\r`, U+2028,
+  U+2029) is drawn as `⏎`, so a value cannot forge a card line. The
+  secret mask applies at any depth of an object or a list, to keys
+  matching the secret pattern or `authorization`, `bearer` or `cookie`.
+  A date given as an object shows its `dateTime` (or `date`) followed by
+  its `timeZone`; with any other key it shows as compact JSON. An
+  argument that cannot be written as JSON (nested too deep) refuses the
+  call rather than showing an empty value.
 - **Mode.** At `session.start` read
   `$.settings.read({ key: 'permissions' })` in try/catch (the call is in
   the 2.1.325 types: it resolves one top-level settings key, or
@@ -1905,6 +2298,29 @@ declare module 'claude-code' {
   `classic.Stop` (main thread only: `e.agent_id === undefined`) set `mode`
   from `e.permission_mode` with `modeFrom: 'event'`. All three observe and
   return `next(e)`.
+  *Corrected 2026-11-16 after the phase 4 review.* `session.start` fires
+  again on a hot reload, an enable or a worker respawn, and the settings
+  never see a mode set on the command line or with shift+tab, so reading
+  them again there put `default` back over a live bypass mode and let
+  sends through without a card. The settings are therefore read only
+  while no event has named the mode: `session.start` first reads the
+  stored `mode` and `modeFrom` (the session's state outlives a reload);
+  when `modeFrom` is `event`, that mode is restored and the settings are
+  not applied; when the stored state cannot be read, the mode stays
+  `unknown`, which is gated. A stored mode that is gated is kept gated
+  whatever `modeFrom` says (the two values are written one after the
+  other, and a reload between the writes must not open the gate).
+  *Added 2026-11-16 after the phase 4 live check.* On a machine where a
+  guard plugin keeps the classic events from user plugins, no event ever
+  names the mode (see "Not possible in this engine"), and the settings'
+  default then decides for every session, also for one a launcher started
+  in another mode. So a launcher may state the mode: when the environment
+  variable `SEND_GATE_MODE` holds a known mode name at `session.start`
+  (read with `$.env.get('SEND_GATE_MODE')`), it sets `mode` with
+  `modeFrom: 'env'`. An event wins over it; it wins over the settings; any
+  other value is ignored. `modeFrom` is then one of `event`, `env`,
+  `settings`, `none`, and `/send-gate status` says `from the launcher's
+  SEND_GATE_MODE`. Nothing sets the variable by default.
 - **The gate:** `on('tool.call', { tool: /^mcp__/ }, ...)` with the
   fail-closed catch. `kindOf` null: `next(e)`. Mode not gated: record
   `not-gated` and `next(e)`. Otherwise build the card and
@@ -1932,6 +2348,13 @@ declare module 'claude-code' {
   the config; a failed read answers `The tool list could not be read.`);
   `send` and `cancel` (answer the
   pending hold; only for origin `composer` or `bridge`); `reload`.
+  *Corrected 2026-11-16 after the phase 4 review:* `send` approves only a
+  hold the person can have read: one that is on screen (in the pane or the
+  dialog, not waiting behind another) and has been for at least 1.5
+  seconds; otherwise it answers `A new hold just appeared: read it, then
+  answer again.` and approves nothing. `cancel` needs no such rule, since
+  it only refuses. The kit (Task 6) carries the time a hold came on
+  screen; motion-hold's `/motion run` follows the same rule.
 
 - [ ] **Step 1: write the failing tests.**
   `rules.test.ts`:
@@ -2050,8 +2473,12 @@ the row shows only while the queue is non-empty; the pane has `j`, `k`,
    `{ plugin: 'queue', key: 'queue' }`; no `stackRow`, the row is its own
    keyed Box.
 2. `isSending` and `waitingOn` live in state, so a hot reload cannot send
-   twice. `isSending` clears at a main-loop `turn.start` and at
-   `session.start`.
+   twice. `isSending` clears at a main-loop `turn.start`, and when a submit
+   is dropped or fails. *Corrected 2026-11-16 after the phase 5 review:*
+   it first also cleared at `session.start`, but that event fires again on
+   exactly the reload the flag is meant to survive. `session.start` now
+   only cancels a pending automatic send and clears `waitingOn`; a stale
+   flag heals at the next main-loop turn.
 3. **Never send while an agent runs.** `isAgentBusy(runs)` is true when
    `runs` is an array holding an entry with `status === 'running'` and
    `kind` absent or `'agent'`. An automatic send first reads
@@ -2059,11 +2486,19 @@ the row shows only while the queue is non-empty; the pane has `j`, `k`,
    `waitingOn: 'agents'` and retries every `AGENT_RETRY_MS` until the
    queue is empty, paused, or a main turn starts. An absent agents mod
    reads as not busy. Manual sends (`/q next`, `/q send <n>`, the row and
-   pane buttons) are not held back.
+   pane buttons) are not held back. The automatic take re-checks inside
+   its state update that it was not cancelled and that no prompt of the
+   queue's is on its way, and a manual send cancels a pending automatic
+   one before it takes its item, so the two can never both send for one
+   turn end. *(Added 2026-11-16 after the phase 5 review.)*
 4. The row shows `waiting on agents` in yellow while `waitingOn` is
    `agents`.
 5. Both render hooks get the standard `.catch`; the command registration
    sits in try/catch.
+6. *(Added 2026-11-16 after the phase 5 review.)* `/q add` refuses a text
+   that starts with `/`, answering `Slash commands cannot be queued: type
+   them directly.` A slash command starts no model turn, so nothing would
+   clear `isSending` and the queue would stall without saying why.
 
 - [ ] **Step 1: copy the prototype's files** into `queue/` and rename as in
   change 1. Run `claude plugin test queue`: the prototype's 15 tests pass
@@ -2078,7 +2513,18 @@ the row shows only while the queue is non-empty; the pane has `j`, `k`,
   - "a manual send goes anyway".
   - "no agents mod: sends as before".
   - "a reload does not send twice": `isSending` true in state, then
-    `session.start`, then a turn end; one submit in total.
+    `session.start`: the flag is still true and a turn end sends nothing;
+    after a main-loop `turn.start` and that turn's end, item 1 is sent;
+    one submit in total.
+  - Added after the phase 5 review: "a dropped submit puts the item back
+    and pauses" and "a failed submit puts the item back and pauses" (items
+    restored in order, `isPaused` true, `isSending` false, `waitingOn`
+    empty, the toast, and `/q resume` then a turn end sends it once); "a
+    cancelled automatic send takes nothing" (a main-loop `turn.start`, or
+    a manual send, lands between the automatic send's read of the agents
+    and its take: one submit at most); "an older stored value is filled
+    in" (`normalize`); "a session end stops a wait" and "a survey that
+    stays ends the wait" ; "a slash command is not queued".
 - [ ] **Step 3: run.** Expected: FAIL in the new tests.
 - [ ] **Step 4: implement changes 2 to 5.**
 - [ ] **Step 5: run.** Expected: PASS, the prototype's 15 tests plus the
@@ -2129,17 +2575,40 @@ export const THUMBS_KEPT = 24
 export const PLACED_KEPT = 12
 export function thumbOf(tile: ImageTile): ImageTile     // at most 12 by 6 cells, via shrinkTile
 // state additions under `images`
-placed: Record<string, { tags: number[]; at: number }>   // place id -> its tags
+placed: Record<string, { tags: number[]; at: number; done?: true }>   // place id -> its tags; done once its run ended or was stopped
 thumbs: Record<string, ImageTile>                         // tag number -> thumbnail
 under: '' | 'on' | 'off'
 ```
 
 **Behaviour:**
 
-- Where the existing code starts `runBatch` for a person's prompt with
-  `[Image #n]` tags, and `under` is on, it first calls
-  `$.ui.place({ id: 'img-' + generation })` from the same timer, and
-  records the id with its tags in `placed` (newest `PLACED_KEPT` kept).
+- For a person's prompt with `[Image #n]` tags, when `under` is on, the mod
+  calls `$.ui.place({ id })` and records the id with its tags in `placed`
+  (newest `PLACED_KEPT` kept). *Corrected 2026-11-16 after the phase 6
+  review, in four points:*
+  - **The id** is `img-<stamp>-<run>`, where `<stamp>` is the clock at this
+    load's `session.start` in base 36 and `<run>` the run counter. The
+    counter alone restarts at 0 on a hot reload while older rows still
+    stand in the transcript, and the same id would answer an old row.
+  - **The moment** is where the existing code starts `runBatch`; for a
+    prompt typed over a running turn it is the next main-loop
+    `turn.start`, when that prompt joins the transcript, not the 10 ms
+    timer (which would put the row above its own prompt). When the engine
+    delivers such a prompt into the running turn, no turn of its own
+    starts: the row is then placed 1.5 seconds after that turn's
+    `turn.complete`, below its answer, so it is never left for the
+    person's next prompt. The grace is there because a prompt held for a
+    turn of its own starts that turn just after the running one ends, and
+    its `turn.start` must be the one to place the row; a prompt sent with
+    `wait` is left to its own turn however late it starts. The mod
+    does not hook `turn.step` to place it at the next model request: a
+    hook on that streaming event would stand in every model response of
+    every session.
+  - **The band's switches do not reach the row:** with `/img off` or the
+    `auto` option off and `under` on, the tags are still noted and the
+    tiles are built for the row only; nothing is added to the band.
+  - **A run that ends or is stopped** (a newer prompt, `/img off`,
+    `/img clear`) sets `done` on its `placed` entry.
 - Each tile the pipeline builds is also stored as `thumbs[n] =
   thumbOf(tile)` (newest `THUMBS_KEPT` kept).
 - `on('ui.render', { component: 'Placed' }, ...)` in `under.tsx`: passes
@@ -2147,7 +2616,10 @@ under: '' | 'on' | 'off'
   (bare name) is `images` and its id is in `placed`. It draws a row keyed
   `img-under`: for each tag a column with a `Raster` keyed
   `img-under-<n>` when the thumbnail has cells, and a dim caption `[Image
-  #n] WxH`, or `[Image #n] …` while the tile is not built yet.
+  #n] WxH`, or `[Image #n] …` while the tile is not built yet. Once the
+  row's entry is `done`, a tag with no thumbnail (never built, or dropped
+  from `thumbs` since) reads `[Image #n]` with no ellipsis, so a row never
+  claims to be loading for good.
 - `/img under on | off` sets `under` and stores it (store key `under`).
   `/img off` and the `auto` option keep their meaning for the band row
   only.
@@ -2167,6 +2639,18 @@ under: '' | 'on' | 'off'
     passed on".
   - "old rows are forgotten": after 13 prompts with images, `placed` holds
     12 ids.
+  - Added after the phase 6 review: "the band off still places a row"
+    (`/img off`, and the `auto` option off, each with `under` on: one
+    place, the thumbnail is built, `tiles` and `shown` do not change);
+    "an id never repeats after a reload" (13 rows, a second
+    `session.start` at a later clock, one more prompt: its id was never
+    placed before); "a stopped run stops claiming to load" (two images,
+    a second prompt before the second tile: the first row's second
+    caption is `[Image #2]`); "a dropped thumbnail stops claiming to
+    load"; "a prompt typed over a turn is placed when its turn starts";
+    "a prompt typed over a turn that only ends is placed at its end"; "a
+    model request of the running turn places nothing"; "under off keeps
+    the rows already placed".
 - [ ] **Step 2: run** `claude plugin test images`. Expected: FAIL.
 - [ ] **Step 3: implement.**
 - [ ] **Step 4: run.** Expected: PASS, every existing test and the new
@@ -2360,6 +2844,15 @@ Paths in state are relative to `root`, with `''` for the root itself.
   folder.
 - **Git:** `$.process.run(['git', '-C', root, 'status', '--porcelain'], { timeoutMs: 3000 })`;
   a failure or a non-zero exit gives no marks.
+  *Added 2026-11-16 after the phase 7 review, three points:* the run sets
+  `env: { GIT_OPTIONAL_LOCKS: '0' }` (the engine lays it over the host's
+  environment), so a status read at a turn's end never takes the index
+  lock from a `git add` or `git commit` that a background task is running;
+  at most `MARK_CAP = 5000` marks are kept, the head line then reading
+  `5000+ changed`, and the marks are indexed once per read (the folders
+  that hold a change, the untracked folders) instead of being scanned for
+  every row drawn; and an untracked folder that is the session folder
+  itself or one of its parents marks everything in the tree as untracked.
 - **The pane:** a head line `Files · <root's name> · N changed · M touched
   this turn`; when anything was touched, a block `Touched this turn` with
   up to 8 paths, writes first; then the rows: a folder is a `plain` Button
@@ -2433,6 +2926,18 @@ edit the file is under `Touched this turn` and carries `M`.
   event or field for it.
 - **Seeing a permission prompt** (for the queue and for a mascot
   reaction): no event or field.
+- **The live permission mode, under a guard plugin.** Found in the phase 4
+  live check, 2026-11-16: a guard plugin of a higher tier (an
+  organization's security plugin) stands on the classic hook events and
+  passes them on past user plugins, so `classic.UserPromptSubmit` and
+  `classic.Stop` never reach send-gate, and its mode stays whatever the
+  settings' `permissions.defaultMode` says. With a default of
+  `bypassPermissions` every session is gated, also one started in another
+  mode; with any other default a session switched into bypass is not
+  gated. The same guard may leave the strip's health pill without
+  `classic.StopFailure` (not observed: no turn failed during the check);
+  a failed turn then reads `turn failed`, without the login or limit
+  detail. Nothing here works around the guard.
 - **Mascots in a Client module:** a Client cannot draw a `Raster`. The
   Client technique is used by the strip's working pill and by the
   breathing band.

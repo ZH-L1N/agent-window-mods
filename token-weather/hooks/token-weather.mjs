@@ -32,6 +32,11 @@
 // their number (SYS 10, PLAN 20, HANDOFF 30, CACHE 40, AGENTS 50, GOAL 60,
 // HERE 70, NEXT 80), not by the plugins' load order; other bands follow.
 //
+// Local change 12 (zehui-mods): the session cost, today's tokens and the
+// month's totals, the figures the row draws, are published to $.state under
+// token-weather.totals wherever the month is recorded, for other mods' panes.
+// The row itself is unchanged.
+//
 // The host reads on(...) and $.noun.method(...) from source, so they are
 // spelled literally, and helpers that take $ are top-level functions.
 
@@ -98,6 +103,9 @@ const DAY_PREFIX = "token-weather.day.";
 // mod's row (declared in types/index.d.ts). Any plugin may read it; only this
 // one writes it.
 const CONTEXT_STATE = { plugin: "token-weather", key: "context" };
+// Local change 12 (zehui-mods): the row's totals, for other mods (declared in
+// types/index.d.ts). Any plugin may read it; only this one writes it.
+const TOTALS_STATE = { plugin: "token-weather", key: "totals" };
 
 // Readings: { tokens, window, percent, isEstimate? }, oldest first.
 let readings = [];
@@ -126,6 +134,8 @@ export function register(on, options = {}) {
     // Local change (zehui-mods): month usage.
     await pruneMonths($);
     await recordMonth($);
+    // Local change 12 (zehui-mods): the row's totals, for other mods.
+    await publishTotals($);
     return result;
   });
 
@@ -139,6 +149,8 @@ export function register(on, options = {}) {
     await takeReading($);
     // Local change (zehui-mods): month usage.
     await recordMonth($);
+    // Local change 12 (zehui-mods): the row's totals, for other mods.
+    await publishTotals($);
     return result;
   });
 
@@ -458,7 +470,8 @@ async function recordMonth($) {
         sumTokens += r.tokens;
       }
     }
-    month = { label: MONTH_NAMES[Number(ym.slice(5)) - 1], usd: sumUsd, tokens: sumTokens };
+    // Local change 12 (zehui-mods): ym kept for the published totals.
+    month = { ym, label: MONTH_NAMES[Number(ym.slice(5)) - 1], usd: sumUsd, tokens: sumTokens };
     $.ui.invalidate("ui.render");
   } catch {
     // The month line keeps its last figures.
@@ -485,6 +498,26 @@ async function recordDay($, keys, sessionId, added) {
     today = { ymd, tokens: sum };
   } catch {
     // The today figure keeps its last value.
+  }
+}
+
+// Local change 12 (zehui-mods): the figures the row draws, as
+// token-weather.totals: { costUsd, today: { ymd, tokens } | null,
+// month: { ym, usd, tokens } | null, readAt }. costUsd is the session cost,
+// today the sum over this machine's sessions for its local date (a reader
+// compares ymd with its own day, as the row does), month the sum over this
+// machine's sessions for the month.
+async function publishTotals($) {
+  try {
+    const value = {
+      costUsd,
+      today: today ? { ymd: today.ymd, tokens: today.tokens } : null,
+      month: month ? { ym: month.ym, usd: month.usd, tokens: month.tokens } : null,
+      readAt: await $.clock.now(),
+    };
+    await $.state.set(TOTALS_STATE, value);
+  } catch {
+    // Readers keep the last totals they had.
   }
 }
 
