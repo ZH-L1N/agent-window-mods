@@ -91,7 +91,7 @@
     {
       "name": "here",
       "source": "./here",
-      "description": "A HERE band above the prompt that says where the session is, with no model call by default: goal-meter's goal name, what Claude is doing now (the last tool call's verb and path, or the spinner word while it thinks) and the questions the last reply asked you; /here prints the three, /here on | off; option rewrite=haiku.",
+      "description": "A HERE band above the prompt that says where the session is, with no model call by default: goal-meter's goal name, what Claude is doing now (the last tool call's verb and path, or the spinner word while it thinks) and the questions the last reply asked you; /here prints the three, /here on | off; options rewrite=haiku, delaySeconds (the row waits 5 seconds into a turn).",
       "author": {
         "name": "Zehui Lin"
       },

@@ -29,6 +29,8 @@ test('row: shows with any one part; hidden with none', async ($, on) => {
   expect(await lineRuns($)).toEqual([])
   await w.turnStart()
   await w.spin('Sauteing')
+  // In a turn the row waits delaySeconds (default 5).
+  await w.clock.advance(5_000)
   expect(lineText(await lineRuns($))).toBe(`${CHIP} now Sauteing…`)
   await w.turnEnd('No questions here.')
   expect(await lineRuns($)).toEqual([])

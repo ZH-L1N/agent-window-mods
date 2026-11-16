@@ -33,3 +33,5 @@ The ` ◉ HERE ` chip on orange `#fb923c`, padded to the zehui-mods chip width,
 follows the other zehui-mods rows (GOAL, CACHE, HANDOFF).
 
 2026-11-16, tests only (plan 2026-11-16-strip-forks-safety, Task 0b), with Claude: the stack-order test asserted that the row hook sorts the other mods' rows, which engine 2.1.325 no longer hands it (each plugin is asked for its own row). It is replaced by "row: the hook draws this plugin's own row". No runtime change; order across mods is the strip mod's list hook.
+
+2026-11-16, 0.1.1 (plan 2026-11-16-strip-forks-safety, Task 12b), with Claude: the row waits while a main-loop turn runs until the turn has run `delaySeconds` (new option, default 5; 0 shows at once). `live.turnStartedAt` is set from `$.clock.now()` at a main-loop `turn.start` and reset at `session.start`, `turn.complete` and a clearing `session.end`; a `$.clock.after` timer armed at the turn start asks for the redraw at the mark. Between turns the row shows as before. The row test "shows with any one part" advances its clock past the delay before drawing the spinner word; its expectations are unchanged.

@@ -8,4 +8,14 @@ export const live = {
   isTurnRunning: false,
   /** The terminal spinner's word as last drawn; '' after a main-loop turn ends. */
   spinnerWord: '',
+  /** When the running main-loop turn started, `$.clock.now()` milliseconds; 0 when no turn runs. */
+  turnStartedAt: 0,
 }
+
+/** How long a main-loop turn runs before the row shows (option delaySeconds, default 5). */
+export const DEFAULT_DELAY_S = 5
+
+/** The option delaySeconds in milliseconds: a number of seconds, 0 or more; anything else is the default. */
+export const delayMsOf = (v: unknown): number =>
+  Math.round((typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : DEFAULT_DELAY_S) * 1000)
+

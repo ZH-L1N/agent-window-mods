@@ -25,7 +25,8 @@ call by default:
   every part. The row shows the first, cut to 60
   columns, in orange, with `+n` for the rest. Dropped when you send the next
   prompt (a slash command does not drop them).
-- **Shown** whenever any of the three has a value; hidden otherwise. On a
+- **Shown** whenever any of the three has a value; hidden otherwise, and
+  during a main-loop turn until it has run `delaySeconds` (default 5). On a
   narrow band the goal is cut first (40, then 20 columns), then now (48, then
   28); the question is kept.
 - **Stack**: the row is keyed `zm-70-here` and takes its slot in the
@@ -51,6 +52,11 @@ characters and goal-meter's task list; the row and `/here` use what it said,
 falling back to the plain parts where it said nothing. The call runs from a
 timer after the turn, is skipped while the row is off, and its answer is
 dropped once you send the next prompt or the next main-loop turn starts.
+
+`delaySeconds`: a number, default `5`. While a main-loop turn runs, the row
+appears only once the turn has run this many seconds, so a quick turn does
+not flash it; between turns it shows at once. `0` shows it at once in a
+turn too.
 
 ## Install (local)
 

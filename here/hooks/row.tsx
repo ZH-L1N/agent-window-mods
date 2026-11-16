@@ -4,7 +4,8 @@
 // main-loop tool call's verb and path, or the spinner word (live.ts) before the
 // turn's first tool call; you is the first question line of the last reply, cut to
 // 60 columns, `+n` when it asked more. The row shows whenever any of the
-// three has a value. Its row sits in the zehui-mods stack by its order
+// three has a value; while a main-loop turn runs, only once it has run
+// delaySeconds (default 5). Its row sits in the zehui-mods stack by its order
 // (stackRow); other mods' bands follow.
 import { atom, read } from 'claude-code'
 import type { EngineInterface, PluginOptions, RenderElement, RenderInput } from 'claude-code'
@@ -30,7 +31,7 @@ import {
   stackKey,
   stackRow,
 } from './kit'
-import { live } from './live'
+import { delayMsOf, live } from './live'
 
 const now = atom({ plugin: 'here', key: 'now' } as const, null)
 const you = atom({ plugin: 'here', key: 'you' } as const, [])
@@ -67,9 +68,23 @@ export async function peerGoal($: EngineInterface): Promise<{ name: string; task
 /** `now` as shown: the last tool call, or the spinner word while a turn has made none. */
 export const nowText = (n: HereNow | null): string => n?.text ?? (live.isTurnRunning ? live.spinnerWord : '')
 
+/** True while a main-loop turn runs and has not yet run delaySeconds. */
+async function isWaiting($: EngineInterface, options: PluginOptions): Promise<boolean> {
+  if (!live.isTurnRunning || live.turnStartedAt <= 0) return false
+  const delayMs = delayMsOf(options.delaySeconds)
+  if (delayMs <= 0) return false
+  try {
+    return (await $.clock.now()) - live.turnStartedAt < delayMs
+  } catch {
+    return false
+  }
+}
+
 export async function drawRow($: EngineInterface, e: RenderInput<'AbovePrompt'>, pass: () => Promise<RenderElement>, options: PluginOptions) {
   if (e.surface !== 'terminal' || e.props.hasSurvey) return pass()
   if (!isBandOn(await read($, band))) return pass()
+  // A main-loop turn shows the row only once it has run delaySeconds (register.tsx asks for the redraw at the mark).
+  if (await isWaiting($, options)) return pass()
   const n = await read($, now)
   const rw = rewriteOf(options.rewrite) === 'haiku' ? await read($, rewrite) : null
   const p = partsOf((await peerGoal($)).name, nowText(n), await read($, you), rw)

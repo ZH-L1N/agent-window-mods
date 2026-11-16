@@ -1,6 +1,6 @@
 {
   "name": "here",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "A HERE band above the prompt that says where the session is, with no model call by default (option rewrite=haiku makes one per answer): the goal (goal-meter's goal name, else the first line of the prompt that started the open task list), what Claude is doing now (the last tool call's verb and path, or the spinner word while it thinks) and the questions the last reply asked you; /here prints the three, /here on | off.",
   "author": {
     "name": "Zehui Lin"
@@ -14,6 +14,12 @@
       "description": "off: the row is built from the tool calls, the spinner and the reply's question lines, no model call (default); haiku: one Haiku call after each main-loop answer rewrites the three parts from the reply and the task list.",
       "default": "off",
       "options": ["off", "haiku"]
+    },
+    "delaySeconds": {
+      "type": "number",
+      "title": "Delay before the row shows in a turn (seconds)",
+      "description": "While a main-loop turn runs, the row appears only once the turn has run this many seconds (default 5); between turns it shows at once. 0 shows it at once in a turn too.",
+      "default": 5
     }
   }
 }

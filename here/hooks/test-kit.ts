@@ -35,6 +35,8 @@ export type World = {
   command: (args: string) => Promise<string>
   /** Lets the timers run: the rewrite starts 10 ms after the answer. */
   settle: () => Promise<void>
+  /** How many times the plugin asked for a `ui.render` redraw. */
+  invalidates: () => number
 }
 
 export type WorldShape = {
@@ -63,7 +65,12 @@ export async function world($: Engine, on: On, shape: WorldShape = {}): Promise<
   let goal: PeerGoalShape | undefined
   let answer: Answerer = () => ({ text: json({ goal: 'Ship HERE', now: 'Writing tests', you: 'Merge now?' }) })
   let turns = 0
+  let invalidates = 0
 
+  on('ui.invalidate', (_$, e, next) => {
+    if ((e as { event?: string }).event === 'ui.render') invalidates++
+    return next(e)
+  })
   on('store.get', (_$, e) => ({ value: store.get((e as { key: string }).key) }) as never)
   on('store.set', (_$, e) => {
     const w = e as { key: string; value: unknown }
@@ -159,6 +166,7 @@ export async function world($: Engine, on: On, shape: WorldShape = {}): Promise<
     settle: async () => {
       await clock.advance(50)
     },
+    invalidates: () => invalidates,
   }
 }
 

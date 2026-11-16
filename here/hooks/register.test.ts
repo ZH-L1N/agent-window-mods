@@ -1,6 +1,8 @@
 import { expect, test } from 'claude-code/testing'
 
-import { T0, world } from './test-kit'
+import { CHIP } from './kit'
+import { delayMsOf } from './live'
+import { T0, lineRuns, lineText, world } from './test-kit'
 
 test('register: a main-loop tool call is now, from the moment it starts; a subagent\'s is not', async ($, on) => {
   const w = await world($, on)
@@ -258,4 +260,98 @@ test('register: control characters never reach the state, the row or /here', { o
   const shown = await w.command('')
   expect(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/.test(shown)).toBe(false)
   expect(shown.split('\n')[1]).toBe('now   Edit [2Jing')
+})
+
+test('register: the row waits five seconds into a turn', async ($, on) => {
+  const w = await world($, on)
+  await w.start()
+  await w.turnStart()
+  await w.clock.advance(1_000)
+  await w.tool({ tool: 'Read', file_path: '/repo/README.md' })
+  expect(await lineRuns($)).toEqual([])
+  await w.clock.advance(3_000)
+  expect(await lineRuns($)).toEqual([])
+  const asked = w.invalidates()
+  // At the mark a timer asks for the redraw that brings the row in.
+  await w.clock.advance(1_000)
+  expect(w.invalidates()).toBeGreaterThan(asked)
+  expect(lineText(await lineRuns($))).toBe(`${CHIP} now Reading README.md`)
+})
+
+test('register: between turns the row shows as before', async ($, on) => {
+  const w = await world($, on)
+  await w.start()
+  await w.turnStart()
+  await w.tool({ tool: 'Read', file_path: '/repo/README.md' })
+  expect(await lineRuns($)).toEqual([])
+  await w.turnEnd('Done.')
+  expect(lineText(await lineRuns($))).toBe(`${CHIP} now Reading README.md`)
+  // A subagent's turn does not start the wait.
+  await w.turnStart('a1')
+  expect(lineText(await lineRuns($))).toBe(`${CHIP} now Reading README.md`)
+})
+
+test('register: delaySeconds 0 shows at once', { options: { delaySeconds: 0 } }, async ($, on) => {
+  const w = await world($, on)
+  await w.start()
+  await w.turnStart()
+  await w.tool({ tool: 'Read', file_path: '/repo/README.md' })
+  expect(lineText(await lineRuns($))).toBe(`${CHIP} now Reading README.md`)
+})
+
+test('register: delaySeconds that is not a number of seconds, 0 or more, is the default five', () => {
+  expect(delayMsOf(-1)).toBe(5_000)
+  expect(delayMsOf(Number.NaN)).toBe(5_000)
+  expect(delayMsOf('3')).toBe(5_000)
+  expect(delayMsOf(undefined)).toBe(5_000)
+  expect(delayMsOf(0)).toBe(0)
+  expect(delayMsOf(2.5)).toBe(2_500)
+})
+
+test('register: a /clear in the middle of a turn ends the wait', async ($, on) => {
+  // The test's import of live.ts is not the plugin's instance, so the reset of
+  // live.turnStartedAt is checked by what it does: the row is back at once and
+  // the cleared turn's timer asks for no redraw.
+  const w = await world($, on)
+  await w.start()
+  w.setGoal({ name: 'Ship it', tasks: [{ title: 'a', status: 'pending' }] })
+  await w.turnStart()
+  await w.clock.advance(1_000)
+  expect(await lineRuns($)).toEqual([])
+  await $.session.end({ reason: 'clear', sessionId: 's1', resume: {} } as never)
+  expect(lineText(await lineRuns($))).toBe(`${CHIP} goal Ship it`)
+  const asked = w.invalidates()
+  await w.clock.advance(4_000)
+  expect(w.invalidates()).toBe(asked)
+})
+
+test('register: the last turn\'s timer asks for no redraw in the next turn; the next turn\'s own mark does', async ($, on) => {
+  const w = await world($, on)
+  await w.start()
+  await w.turnStart()
+  await w.clock.advance(2_000)
+  await w.turnEnd('Done.')
+  await w.clock.advance(1_000)
+  await w.turnStart()
+  await w.tool({ tool: 'Read', file_path: '/repo/README.md' })
+  const asked = w.invalidates()
+  // Turn 1's mark (5 s): its timer finds another turn running and asks for nothing.
+  await w.clock.advance(2_000)
+  expect(w.invalidates()).toBe(asked)
+  expect(await lineRuns($)).toEqual([])
+  // Turn 2's own mark (8 s): one redraw, and the row is in.
+  await w.clock.advance(3_000)
+  expect(w.invalidates()).toBe(asked + 1)
+  expect(lineText(await lineRuns($))).toBe(`${CHIP} now Reading README.md`)
+})
+
+test('register: with only the spinner word, the row still waits the full five seconds', async ($, on) => {
+  const w = await world($, on)
+  await w.start()
+  await w.turnStart()
+  await w.spin('Sauteing')
+  await w.clock.advance(4_900)
+  expect(await lineRuns($)).toEqual([])
+  await w.clock.advance(100)
+  expect(lineText(await lineRuns($))).toBe(`${CHIP} now Sauteing…`)
 })

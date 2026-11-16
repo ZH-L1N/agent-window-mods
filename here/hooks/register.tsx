@@ -31,7 +31,7 @@ import {
   rewritePrompt,
   summaryOf,
 } from './kit'
-import { live } from './live'
+import { delayMsOf, live } from './live'
 import { drawRow, nowText, peerGoal } from './row'
 
 const now = atom({ plugin: 'here', key: 'now' } as const, null)
@@ -88,6 +88,7 @@ export const register: Register = (on, options: PluginOptions) => {
     cwd = typeof e.cwd === 'string' ? e.cwd : ''
     live.isTurnRunning = false
     live.spinnerWord = ''
+    live.turnStartedAt = 0
     await $.command.register({
       name: 'here',
       description: 'HERE row: print the goal, what Claude is doing now and the questions the last reply asked; or turn the row on or off',
@@ -103,10 +104,25 @@ export const register: Register = (on, options: PluginOptions) => {
   })
 
   // A main-loop turn starts: the last turn's `now` and rewrite are done with; the spinner word stands in until the first tool call.
+  // The row stays away until the turn has run delaySeconds; a timer asks for the redraw at the mark, as time alone draws nothing.
   on('turn.start', async ($, e, next) => {
     const started = await next(e)
     if (e.agentId !== undefined) return started
+    const delayMs = delayMsOf(options.delaySeconds)
+    let at = 0
+    try {
+      at = delayMs > 0 ? await $.clock.now() : 0
+    } catch {
+      // No clock: the row shows at once.
+    }
     live.isTurnRunning = true
+    live.turnStartedAt = at
+    if (at > 0) {
+      $.clock.after(delayMs, () => {
+        // Only for the turn that armed it, while it still runs.
+        if (live.isTurnRunning && live.turnStartedAt === at) $.ui.invalidate('ui.render')
+      })
+    }
     generation++
     try {
       await update($, now, () => null)
@@ -164,6 +180,7 @@ export const register: Register = (on, options: PluginOptions) => {
     if (e.agentId !== undefined) return done
     live.isTurnRunning = false
     live.spinnerWord = ''
+    live.turnStartedAt = 0
     try {
       const answer = typeof e.answer === 'string' ? e.answer : ''
       const qs = questionsOf(answer)
@@ -205,6 +222,7 @@ export const register: Register = (on, options: PluginOptions) => {
     if (e.reason === 'clear' || e.reason === 'resume') {
       live.isTurnRunning = false
       live.spinnerWord = ''
+      live.turnStartedAt = 0
       generation++
       lastPrompt = ''
       try {
