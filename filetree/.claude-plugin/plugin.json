@@ -1,0 +1,10 @@
+{
+  "name": "filetree",
+  "version": "0.1.0",
+  "description": "A small tree of the working folder in a Files pane: folders open and close, git marks changed files, and the files read or written this turn are listed on top. /tree opens it.",
+  "author": {
+    "name": "Zehui Lin"
+  },
+  "license": "MIT",
+  "types": "./types/index.d.ts"
+}

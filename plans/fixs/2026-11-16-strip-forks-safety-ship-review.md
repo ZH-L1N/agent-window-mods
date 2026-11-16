@@ -44,3 +44,8 @@ ship-review round 1 [phase 6 comfort]: 17 confirmed / 17 fixed / 0 left, per len
 ship-review round 2 [phase 6 comfort]: 1 confirmed / 1 fixed / 0 left, per lens: correctness 1 (re-review of fix round 1; images)
 ship-review check [phase 6 comfort]: 1 confirmed / 1 fixed / 0 left (spot check of fix round 2; images, medium, fixed by the orchestrator, gate re-run green; agents 0)
 review-loop [phase 6 comfort]: budget-spent (2 rounds, 0 non-HIGH deferred) @ 9a0e4039f06e86edcb79ebbcc213f4f08ff57236 fb6840341cc7f68d23ae7998f2afab60466b0b80
+
+ship-review round 1 [phase 7 file tree]: 4 confirmed / 4 fixed / 0 left, per lens: correctness 3, conformance 1
+ship-review round 2 [phase 7 file tree]: 2 confirmed / 2 fixed / 0 left, per lens: correctness 2 (re-review of fix round 1)
+ship-review check [phase 7 file tree]: 0 confirmed / 0 fixed / 0 left (spot check of fix round 2)
+review-loop [phase 7 file tree]: complete @ dc80e01400a8ab202abe8cd1c9827105c3d31392 d41d2c8b3310afe4f9c4ddd75c2e8573a553dc5d

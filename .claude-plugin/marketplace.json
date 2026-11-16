@@ -302,6 +302,21 @@
         "queue",
         "prompts"
       ]
+    },
+    {
+      "name": "filetree",
+      "source": "./filetree",
+      "description": "A small tree of the working folder in a Files pane: folders open and close, git marks changed files, and the files read or written this turn are listed on top. /tree opens it; /tree close | refresh | toggle <path>.",
+      "author": {
+        "name": "Zehui Lin"
+      },
+      "license": "MIT",
+      "category": "productivity",
+      "tags": [
+        "mod",
+        "files",
+        "pane"
+      ]
     }
   ]
 }
