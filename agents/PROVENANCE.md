@@ -202,3 +202,5 @@ codex mascots (ours) are unchanged. The extraction scripts used this round
 (`extract.py`, `gen_pools.py`) are kept in `~/.cache/zehui-mods/pools/`;
 `~/.claude/mods/tools/gen_mascots.py` still writes the 0.3.0 one-palette
 format.
+
+2026-11-16, tests only (plan 2026-11-16-strip-forks-safety, Task 0b), with Claude: the stack-order test asserted that the row hook sorts the other mods' rows, which engine 2.1.325 no longer hands it (each plugin is asked for its own row). It is replaced by "row: the hook draws this plugin's own row". No runtime change; order across mods is the strip mod's list hook.

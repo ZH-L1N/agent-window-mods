@@ -40,11 +40,6 @@ export type World = {
 export type WorldShape = {
   /** Beneath the row, the engine's own placeholder instead of another mod's Text. */
   isEngineBeneath?: boolean
-  /**
-   * Beneath the band, a column of zehui-mods rows keyed as listed (each a Box
-   * holding a Text of its key), then another mod's band (a Box keyed `other-band` holding a Text `beneath`).
-   */
-  stackBeneath?: string[]
   store?: Record<string, unknown>
   /** While this answers true, every store write throws. */
   isStoreDown?: () => boolean
@@ -99,7 +94,6 @@ export async function world($: Engine, on: On, shape: WorldShape = {}): Promise<
   on('ui.render', async ($$, e) => {
     if ((e as { component?: string }).component === 'AbovePrompt') {
       if (shape.isEngineBeneath) return { type: 'engine', ref: 0 } as never
-      if (shape.stackBeneath) return stackTree(shape.stackBeneath) as never
     }
     const { Text } = $$.ui.resolve(e as never) as unknown as { Text: (p: { key: string; children: string }) => never }
     return Text({ key: 'beneath', children: 'beneath' })
@@ -198,17 +192,3 @@ export async function lineRuns($: Engine, cols = 160): Promise<Run[]> {
 }
 
 export const lineText = (runs: readonly Run[]): string => runs.map(r => r.text).join('')
-
-/** A lower band tree for the stack-order test: zm rows as listed, then a non-zm Text. */
-export const stackTree = (keys: readonly string[]) => ({
-  type: 'Box',
-  props: { flexDirection: 'column' },
-  children: [
-    ...keys.map(key => ({ type: 'Box', props: { key }, children: [{ type: 'Text', props: {}, children: [key] }] })),
-    { type: 'Box', props: { key: 'other-band' }, children: [{ type: 'Text', props: {}, children: ['beneath'] }] },
-  ],
-})
-
-/** The keys of a drawn tree's direct children, in order. */
-export const childKeys = (tree: unknown): string[] =>
-  (((tree as { children?: unknown[] }).children ?? []) as { props?: { key?: string } }[]).map(c => c.props?.key ?? '')

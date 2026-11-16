@@ -27,3 +27,4 @@
 - 2026-10-20 11:35 | images 0.2.1 | shipped | thumbnails above the stack after send (sips → BMP → half-blocks), tall tiles shrink to fit; live-checked
 - 2026-10-20 12:59 | — | docs | clicks need the fullscreen renderer (not a herdr bug): READMEs, PROVENANCE, ROADMAP, skill corrected
 - 2026-10-24 23:51 | zh 0.1.1 | shipped | leading instruction notes stripped from translations, rule added to the system prompt, l: latest button; 22 tests, tsc clean
+- 2026-11-16 02:43 | — | shipped | strip, forks and safety rework: spec, plan and its five-round plan review; ten band-row tests in nine mods now follow engine 2.1.325 (own row per plugin); neutral test fixture name; no runtime change

@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
 import { CHIP, hhmm, objectiveOf, stackBar } from './kit'
-import { FILE, T0, barOf, childKeys, ctx, lineRuns, mountRow, pctOf, world } from './test-kit'
+import { FILE, T0, barOf, ctx, lineRuns, mountRow, pctOf, world } from './test-kit'
 
 test('row: the bar stacks token-weather\'s reading in its order, each used row in its colour', async ($, on) => {
   const w = await world($, on)
@@ -203,12 +203,25 @@ test('row: a saved handoff shows its time and the framed clear & continue button
   await ui.unmount()
 })
 
-test('row: stack order: the row takes HANDOFF 30 among the zm rows beneath, sorted; another band stays last', async ($, on) => {
-  const w = await world($, on, { stackBeneath: ['zm-50-agents', 'zm-20-plan'] })
+/** Every `zm-` row key in a drawn tree, outermost first. */
+const zmKeys = (node: unknown): string[] => {
+  if (!node || typeof node !== 'object') return []
+  const n = node as { props?: { key?: unknown }; children?: unknown }
+  const key = n.props?.key
+  const kids = Array.isArray(n.children) ? n.children : []
+  return [...(typeof key === 'string' && key.startsWith('zm-') ? [key] : []), ...kids.flatMap(zmKeys)]
+}
+
+// Since engine 2.1.325 a band hook draws only its own plugin's row; the order
+// across mods belongs to one AbovePromptList hook.
+test("row: the hook draws this plugin's own row", async ($, on) => {
+  const w = await world($, on, { isEngineBeneath: true })
   w.setTw(ctx(250_000))
   await w.start()
   const ui = await mountRow($)
-  expect(childKeys(await ui.drawn())).toEqual(['zm-20-plan', 'zm-30-handoff', 'zm-50-agents', 'other-band'])
+  const tree = await ui.drawn()
+  expect((tree as { props?: { key?: unknown } }).props?.key).toBe('zm-30-handoff')
+  expect(zmKeys(tree)).toEqual(['zm-30-handoff'])
   expect(await ui.find({ key: 'handoff-line' })).toBeDefined()
   await ui.unmount()
 })

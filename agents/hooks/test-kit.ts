@@ -100,11 +100,6 @@ export type World = {
 export type WorldShape = {
   /** Beneath the band, the engine's own placeholder instead of another mod's Text. */
   isEngineBeneath?: boolean
-  /**
-   * Beneath the band, a column of zehui-mods rows keyed as listed (each a Box
-   * holding a Text of its key), then another mod's band (a Box keyed `other-band` holding a Text `beneath`).
-   */
-  stackBeneath?: string[]
   /** Spawns answer no agentId (a workflow's remote agent). */
   isSpawnUnlinked?: boolean
   /** Every state write of the plugin throws. */
@@ -243,7 +238,6 @@ export async function world(
   })
   on('ui.render', async ($$, e) => {
     if (shape.isEngineBeneath) return { type: 'engine', ref: 0 } as never
-    if (shape.stackBeneath) return stackTree(shape.stackBeneath) as never
     const { Text } = $$.ui.resolve(e as never) as unknown as { Text: (p: { key: string; children: string }) => never }
     return Text({ key: 'beneath', children: 'beneath' })
   })
@@ -482,17 +476,3 @@ export const bandProps = (bodyColumns = 120, hasSurvey = false) =>
 
 /** Decodes a Raster's cells into its u32 words. */
 export const decode = (b64: string): Uint32Array => new Uint32Array(Uint8Array.from(atob(b64), c => c.charCodeAt(0)).buffer)
-
-/** A lower band tree for the stack-order test: zm rows as listed, then a non-zm Text. */
-export const stackTree = (keys: readonly string[]) => ({
-  type: 'Box',
-  props: { flexDirection: 'column' },
-  children: [
-    ...keys.map(key => ({ type: 'Box', props: { key }, children: [{ type: 'Text', props: {}, children: [key] }] })),
-    { type: 'Box', props: { key: 'other-band' }, children: [{ type: 'Text', props: {}, children: ['beneath'] }] },
-  ],
-})
-
-/** The keys of a drawn tree's direct children, in order. */
-export const childKeys = (tree: unknown): string[] =>
-  (((tree as { children?: unknown[] }).children ?? []) as { props?: { key?: string } }[]).map(c => c.props?.key ?? '')

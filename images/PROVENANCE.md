@@ -43,3 +43,5 @@ The thumbnails are the user's own pasted images, drawn in half-blocks.
 ## 0.2.1, 2026-10-20
 
 A tile taller than the rows the band has free is drawn smaller in the same shape (nearest cell) instead of being dropped to its caption; under 3 free rows the captions show alone. Found live: a portrait screenshot (580x1302) showed only its caption.
+
+2026-11-16, tests only (plan 2026-11-16-strip-forks-safety, Task 0b), with Claude: the stack-order test and the short-band test assumed rows of other mods beneath this one, which engine 2.1.325 no longer hands a row hook. The first is replaced by "row: the hook draws this plugin's own row"; the second now counts its room from `maxRows` alone. No runtime change; order across mods is the strip mod's list hook.

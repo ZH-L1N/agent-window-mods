@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
 import { CHIP } from './kit'
-import { MIN, childKeys, lineRuns, lineText, mountRow, usage, world } from './test-kit'
+import { MIN, lineRuns, lineText, mountRow, usage, world } from './test-kit'
 
 // Opus 5.5, 180k cached (169.2k read, 10.8k written), no fresh input: 94% reused.
 const OPUS = usage('claude-opus-5-5', 0, 169_200, 10_800)
@@ -143,12 +143,25 @@ test('row: band=off draws nothing of its own', { options: { band: 'off' } }, asy
   await ui.unmount()
 })
 
-test('row: stack order: the row takes CACHE 40 among the zm rows beneath, sorted; another band stays last', async ($, on) => {
-  const w = await world($, on, { stackBeneath: ['zm-60-goal', 'zm-10-sys'] })
+/** Every `zm-` row key in a drawn tree, outermost first. */
+const zmKeys = (node: unknown): string[] => {
+  if (!node || typeof node !== 'object') return []
+  const n = node as { props?: { key?: unknown }; children?: unknown }
+  const key = n.props?.key
+  const kids = Array.isArray(n.children) ? n.children : []
+  return [...(typeof key === 'string' && key.startsWith('zm-') ? [key] : []), ...kids.flatMap(zmKeys)]
+}
+
+// Since engine 2.1.325 a band hook draws only its own plugin's row; the order
+// across mods belongs to one AbovePromptList hook.
+test("row: the hook draws this plugin's own row", async ($, on) => {
+  const w = await world($, on, { isEngineBeneath: true })
   await w.start()
   await w.step(OPUS)
   const ui = await mountRow($)
-  expect(childKeys(await ui.drawn())).toEqual(['zm-10-sys', 'zm-40-cache', 'zm-60-goal', 'other-band'])
+  const tree = await ui.drawn()
+  expect((tree as { props?: { key?: unknown } }).props?.key).toBe('zm-40-cache')
+  expect(zmKeys(tree)).toEqual(['zm-40-cache'])
   expect(await ui.find({ key: 'cache-line' })).toBeDefined()
   await ui.unmount()
 })

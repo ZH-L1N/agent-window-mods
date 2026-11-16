@@ -34,3 +34,5 @@ The ` ⇄ HANDOFF ` chip, the `▰▱` bar and the traffic-light colours follow 
 the deck.
 
 2026-10-20 (0.1.1), stack order (plan 2026-10-20-boards-codemap-recap, section 0), with Claude: the row is keyed `zm-30-handoff` and the AbovePrompt hook returns `stackRow(row, below)`, which sorts the zehui-mods rows beneath by their number (SYS 10, PLAN 20, HANDOFF 30, CACHE 40, AGENTS 50, GOAL 60, HERE 70, NEXT 80) and keeps other bands after them. `stackRow` in hooks/kit.ts is copied unchanged from the canonical `~/.claude/skills/building-claude-code-mods/references/stack-row.tsx`; ours, no third-party code.
+
+2026-11-16, tests only (plan 2026-11-16-strip-forks-safety, Task 0b), with Claude: the stack-order test asserted that the row hook sorts the other mods' rows, which engine 2.1.325 no longer hands it (each plugin is asked for its own row). It is replaced by "row: the hook draws this plugin's own row". No runtime change; order across mods is the strip mod's list hook.

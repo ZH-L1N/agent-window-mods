@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
 import { CHIP } from './kit'
-import { childKeys, decodeCells, mountRow, rowView, world } from './test-kit'
+import { decodeCells, mountRow, rowView, world } from './test-kit'
 
 /** A world with `[Image #1]` (and more) sent and drawn. */
 async function drawn($: Parameters<typeof world>[0], on: Parameters<typeof world>[1], tags = [1], shape: Parameters<typeof world>[2] = {}) {
@@ -44,10 +44,23 @@ test('row: tiles side by side, oldest first', async ($, on) => {
   expect((await rowView($))?.tiles.map(t => t.key)).toEqual(['images-tile-1', 'images-tile-2', 'images-tile-3'])
 })
 
-test('row: stack order: IMAGES 90 under a zm-80 row, before another mod\'s band', async ($, on) => {
-  await drawn($, on, [1], { stackBeneath: ['zm-80-next', 'zm-10-sys'] })
+/** Every `zm-` row key in a drawn tree, outermost first. */
+const zmKeys = (node: unknown): string[] => {
+  if (!node || typeof node !== 'object') return []
+  const n = node as { props?: { key?: unknown }; children?: unknown }
+  const key = n.props?.key
+  const kids = Array.isArray(n.children) ? n.children : []
+  return [...(typeof key === 'string' && key.startsWith('zm-') ? [key] : []), ...kids.flatMap(zmKeys)]
+}
+
+// Since engine 2.1.325 a band hook draws only its own plugin's row; the order
+// across mods belongs to one AbovePromptList hook.
+test("row: the hook draws this plugin's own row", async ($, on) => {
+  await drawn($, on, [1], { isEngineBeneath: true })
   const ui = await mountRow($)
-  expect(childKeys(await ui.drawn())).toEqual(['zm-10-sys', 'zm-80-next', 'zm-90-images', 'other-band'])
+  const tree = await ui.drawn()
+  expect((tree as { props?: { key?: unknown } }).props?.key).toBe('zm-90-images')
+  expect(zmKeys(tree)).toEqual(['zm-90-images'])
   await ui.unmount()
 })
 
@@ -89,15 +102,17 @@ test('row: the clear button runs /img clear from a timer and names the command i
 })
 
 test('row: a band too short for the tile draws it smaller, and captions only under 3 rows', async ($, on) => {
-  await drawn($, on, [1], { stackBeneath: ['zm-10-sys', 'zm-80-next'] })
-  // 6 rows of tile, a caption, three rows beneath: 10.
-  expect((await rowView($, 160, { maxRows: 10 }))?.tiles.length).toBe(1)
-  // 9 rows: 5 left for the tile, so it is drawn at 5 rows, narrower in the same shape (24 x 6 -> 20 x 5).
-  const small = await rowView($, 160, { maxRows: 9 })
-  expect(small?.tiles.length).toBe(1)
+  // The band is this plugin's own row (the engine's placeholder beneath): the
+  // room is counted from maxRows alone, not from rows beneath.
+  await drawn($, on, [1], { isEngineBeneath: true })
+  // 6 rows of tile and a caption: 7, the tile whole.
+  expect((await rowView($, 160, { maxRows: 7 }))?.tiles).toEqual([{ key: 'images-tile-1', columns: 24, rows: 6 }])
+  // 4 rows: 3 left for the tile, so it is drawn at 3 rows, narrower in the same shape (24 x 6 -> 12 x 3).
+  const small = await rowView($, 160, { maxRows: 4 })
+  expect(small?.tiles).toEqual([{ key: 'images-tile-1', columns: 12, rows: 3 }])
   expect(small?.captions).toEqual(['[Image #1] 1376x688'])
-  // 6 rows: 2 left, under the 3-row floor: captions only.
-  expect(await rowView($, 160, { maxRows: 6 })).toEqual({ tiles: [], captions: ['[Image #1] 1376x688'], more: '' })
+  // 2 rows: 1 left, under the 3-row floor: captions only.
+  expect(await rowView($, 160, { maxRows: 2 })).toEqual({ tiles: [], captions: ['[Image #1] 1376x688'], more: '' })
 })
 
 test('row: a narrow band draws the newest tiles that fit and `+n more`', async ($, on) => {

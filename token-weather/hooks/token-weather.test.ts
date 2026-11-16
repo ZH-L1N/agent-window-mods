@@ -4,7 +4,7 @@
 // to $.state for the handoff mod, and the plain percent of option showPercent.
 // Local change 10 (zehui-mods): today's tokens before the month figure, their
 // day keys, their drop order and their pruning with the month keys.
-// Local change 11 (zehui-mods): the PLAN row's slot (20) in the zehui-mods stack order.
+// Local change 11 (zehui-mods): the PLAN row draws only its own keyed row (zm-20-plan).
 import { expect, mock, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import type { On } from 'claude-code'
@@ -68,8 +68,7 @@ async function world(
   $: Engine,
   on: On,
   first: Reading,
-  // Local change 11 (zehui-mods): stackBeneath: a column of zm rows keyed as listed, then another band.
-  opts: { sessionId?: string; store?: Record<string, unknown>; beneath?: boolean; stackBeneath?: string[] } = {},
+  opts: { sessionId?: string; store?: Record<string, unknown>; beneath?: boolean } = {},
 ): Promise<World> {
   let current = first
   const kept = [{ role: 'user', text: 'summary', toolUses: [] }]
@@ -96,17 +95,6 @@ async function world(
   on('session.id', () => ({ value: opts.sessionId ?? 's1' }) as never)
   on('session.usage', () => ({ value: usageOf(current) }) as never)
   on('ui.render', async ($$, e) => {
-    // Local change 11 (zehui-mods): zm rows out of order, then a non-zm band.
-    if (opts.stackBeneath) {
-      return {
-        type: 'Box',
-        props: { flexDirection: 'column' },
-        children: [
-          ...opts.stackBeneath.map(key => ({ type: 'Box', props: { key }, children: [{ type: 'Text', props: {}, children: [key] }] })),
-          { type: 'Box', props: { key: 'other-band' }, children: [{ type: 'Text', props: {}, children: ['beneath'] }] },
-        ],
-      } as never
-    }
     if (!opts.beneath) return { type: 'engine', ref: 0 } as never
     // Another mod's band beneath this one.
     const { Text } = $$.ui.resolve(e as never) as unknown as { Text: (p: { key: string; children: string }) => never }
@@ -370,13 +358,26 @@ test('a session that ran into this month counts only its usd since the boundary'
   expect(row[row.length - 1]?.text).toBe('Oct $7.00 · 1.0M tokens')
 })
 
-// Local change 11 (zehui-mods): the stack order.
-test('stack order: the PLAN row takes 20 among the zm rows beneath, sorted; another band stays last', async ($, on) => {
-  await world($, on, { tokens: 250_000, categories: CATEGORIES }, { stackBeneath: ['zm-50-agents', 'zm-10-sys'] })
+/** Every `zm-` row key in a drawn tree, outermost first. */
+const zmKeys = (node: unknown): string[] => {
+  if (!node || typeof node !== 'object') return []
+  const n = node as { props?: { key?: unknown }; children?: unknown }
+  const key = n.props?.key
+  const kids = Array.isArray(n.children) ? n.children : []
+  return [...(typeof key === 'string' && key.startsWith('zm-') ? [key] : []), ...kids.flatMap(zmKeys)]
+}
+
+// Local change 11 (zehui-mods): the PLAN row's key. Since engine 2.1.325 a
+// band hook draws only its own plugin's row; the order across mods belongs to
+// one AbovePromptList hook.
+test("row: the hook draws this plugin's own row", async ($, on) => {
+  // No `beneath`: the engine's placeholder is beneath the row.
+  await world($, on, { tokens: 250_000, categories: CATEGORIES })
   await turn($)
   const ui = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', component: 'AbovePrompt', props: bandProps(240, false) })
-  const tree = (await ui.drawn()) as { children?: { props?: { key?: string } }[] }
-  expect((tree.children ?? []).map(c => c.props?.key ?? '')).toEqual(['zm-10-sys', 'zm-20-plan', 'zm-50-agents', 'other-band'])
+  const tree = await ui.drawn()
+  expect((tree as { props?: { key?: unknown } }).props?.key).toBe('zm-20-plan')
+  expect(zmKeys(tree)).toEqual(['zm-20-plan'])
   expect(await ui.find({ type: 'Text', text: ' ◔ PLAN    ' })).toBeDefined()
   await ui.unmount()
 })

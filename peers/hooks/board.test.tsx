@@ -114,7 +114,7 @@ test('board: a spoke this session briefed shows its request, round, countdown an
 test('board: in a spoke, the hub\'s brief to it does not list the hub as a spoke', async ($, on) => {
   const w = await world($, on, { env: { ...HERDR_HOME, HERDR_PANE_ID: 'w1:p6' }, agents: [{ pane: 'w1:p1', status: 'idle', agent: 'claude' }] })
   await w.start()
-  await w.submit(`${envelope('apr-x', 'nebula-hub@w1:p1', 'request')}\nRound 4 of 5. DEADLINE: 45 minutes.`)
+  await w.submit(`${envelope('apr-x', 'main-hub@w1:p1', 'request')}\nRound 4 of 5. DEADLINE: 45 minutes.`)
   expect(w.state('requests')).toBeUndefined()
   await w.command('board')
   const ui = await mountBoard($)
