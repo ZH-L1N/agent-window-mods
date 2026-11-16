@@ -82,14 +82,20 @@ export type World = {
   inits: unknown[]
   /** How many times `$.fs.exists` was asked. */
   existsCalls: () => number
+  /** Every id `$.ui.place` was called with, in order. */
+  places: string[]
   state: (key: string) => unknown
   start: () => Promise<void>
   /** The engine writes `[Image #n]`'s PNG to the session's images folder, now or `afterMs` later on the clock. */
   paste: (n: number, afterMs?: number) => void
   /** A prompt sent from the box (or `origin`), then (unless `isTurn` is false) the main loop's turn starts. */
-  send: (text: string, opts?: { origin?: string; isTurn?: boolean; command?: { name: string; args: string }; turnId?: string }) => Promise<void>
+  send: (text: string, opts?: { origin?: string; isTurn?: boolean; command?: { name: string; args: string }; turnId?: string; wait?: boolean }) => Promise<void>
   /** A turn starts: the main loop's, or a subagent's with `agentId`. */
   turn: (agentId?: string) => Promise<void>
+  /** A model request of the running turn: the main loop's, or a subagent's with `agentId`. */
+  step: (agentId?: string) => Promise<void>
+  /** The running turn ends: the main loop's, or a subagent's with `agentId`. */
+  complete: (agentId?: string) => Promise<void>
   sessionEnd: (reason: string) => Promise<void>
   command: (args: string) => Promise<string>
   /** Moves the clock on far enough for a run whose files are all there. */
@@ -135,6 +141,7 @@ export async function world($: Engine, on: On, shape: WorldShape = {}): Promise<
   const files = new Map<string, string | Uint8Array>()
   const runs: string[][] = []
   const inits: unknown[] = []
+  const places: string[] = []
   const cwd = shape.cwd ?? CWD
   const sessionDir = `/private/tmp/claude-501/${cwd.replace(/[^A-Za-z0-9]/g, '-')}/${SESSION}`
   const imagesDir = `${sessionDir}/images`
@@ -165,6 +172,11 @@ export async function world($: Engine, on: On, shape: WorldShape = {}): Promise<
     return { value: undefined } as never
   })
   on('command.register', async () => ({ value: {} }) as never)
+  on('ui.place', (_$, e) => {
+    const id = (e as { id: string }).id
+    places.push(id)
+    return { value: { isPlaced: true, requestId: `placed-${id}` } } as never
+  })
   on('session.id', () => ({ value: SESSION }) as never)
   on('session.cwd', () => ({ value: cwd }) as never)
   on('fs.list', (_$, e) => {
@@ -230,10 +242,39 @@ export async function world($: Engine, on: On, shape: WorldShape = {}): Promise<
   on('session.end', async (_$, e) => ({ sessionId: (e as { sessionId: string }).sessionId }) as never)
   on('prompt.submit', (_$, e) => ({ text: (e as { text: string }).text }) as never)
   on('turn.start', async (_$, e) => ({ turnId: (e as { turnId: string }).turnId }) as never)
+  on('turn.step', async function* (_$, e) {
+    const s = e as { turnId: string; index: number }
+    return { turnId: s.turnId, index: s.index, answer: '', toolUses: [], stopReason: 'end_turn' } as never
+  })
+  on('turn.complete', async () => ({ text: '' }) as never)
 
   const turn = async (agentId?: string) => {
     turns++
     await $.turn.start({ text: '', turnId: `t${turns}`, ...(agentId !== undefined ? { agentId } : {}) } as never)
+  }
+  let steps = 0
+  const step = async (agentId?: string) => {
+    const stream = $.turn.step({
+      turnId: `t${turns}`,
+      index: steps++,
+      model: 'claude-opus-5-5',
+      messageCount: 1,
+      ...(agentId !== undefined ? { agentId } : {}),
+    } as never)
+    for await (const _chunk of stream) {
+      // Drained: the bottom yields no chunks.
+    }
+    await stream.result
+  }
+  const complete = async (agentId?: string) => {
+    await $.turn.complete({
+      answer: '',
+      durationMs: 0,
+      isAborted: false,
+      reason: 'answer',
+      turnId: `t${turns}`,
+      ...(agentId !== undefined ? { agentId } : {}),
+    } as never)
   }
 
   return {
@@ -244,6 +285,7 @@ export async function world($: Engine, on: On, shape: WorldShape = {}): Promise<
     runs,
     inits,
     existsCalls: () => existsCalls,
+    places,
     state: key => latest.get(key),
     start: async () => {
       await $.session.start({ cwd, surface: 'terminal', isInteractive: true } as never)
@@ -256,7 +298,7 @@ export async function world($: Engine, on: On, shape: WorldShape = {}): Promise<
     send: async (text, opts = {}) => {
       await $.prompt.submit({
         text,
-        wait: false,
+        wait: opts.wait === true,
         origin: { kind: opts.origin ?? 'composer' },
         ...(opts.command ? { command: opts.command } : {}),
         ...(opts.turnId ? { turnId: opts.turnId } : {}),
@@ -264,6 +306,8 @@ export async function world($: Engine, on: On, shape: WorldShape = {}): Promise<
       if (opts.isTurn !== false) await turn()
     },
     turn,
+    step,
+    complete,
     sessionEnd: async reason => {
       await $.session.end({ sessionId: SESSION, reason } as never)
     },

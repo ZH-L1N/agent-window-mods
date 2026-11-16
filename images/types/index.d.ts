@@ -18,6 +18,16 @@ export type ImageTile = {
   cells: string
 }
 
+/** /img under on|off as kept in the store; '' while the `under` option applies. */
+export type ImagesUnder = '' | 'on' | 'off'
+
+/**
+ * A row placed in the transcript after a sent prompt: that prompt's tags, when
+ * it was placed ($.clock.now()), and `done` once its run ended or was stopped
+ * (a tag with no thumbnail then no longer reads as loading).
+ */
+export type ImagesPlaced = { tags: number[]; at: number; done?: true }
+
 declare module 'claude-code' {
   interface PluginState {
     images: {
@@ -27,6 +37,12 @@ declare module 'claude-code' {
       shown: boolean
       /** /img on|off as kept in the store; '' while the `auto` option applies. */
       band: ImagesBand
+      /** The rows placed under sent prompts, by place id (`img-<stamp>-<run>`, the stamp this load's session.start in base 36), at most 12, the newest kept. */
+      placed: Record<string, ImagesPlaced>
+      /** Each built tile drawn small (at most 12 by 6 cells), by its tag's n, at most 24. */
+      thumbs: Record<string, ImageTile>
+      /** /img under on|off as kept in the store; '' while the `under` option applies. */
+      under: ImagesUnder
     }
   }
 }

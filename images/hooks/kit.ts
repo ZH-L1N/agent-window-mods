@@ -1,8 +1,9 @@
-// Shared by register.tsx, pipeline.ts and row.tsx: the look, the options held
+// Shared by register.tsx, pipeline.ts, row.tsx and under.tsx: the look, the options held
 // to their listed values, the tags read from a sent prompt, the session's
 // images folder by name, the sips command lines, the BMP reader, the
 // box-average into half-block Raster cells, the command's words, the
-// terminal-column measure and the stack-order helper. Pure functions only; the
+// terminal-column measure, the stack-order helper, and the thumbnails and
+// placed rows of the row under the sent prompt. Pure functions only; the
 // state atoms are declared again in each file that reads or writes them (the
 // engine reads a state source only from a const of the calling file).
 import type { RenderElement, RenderNode } from 'claude-code'
@@ -13,8 +14,12 @@ export const CHIP = ' ▣ IMAGES  ' // the word padded to 7 letters, like every 
 export const CHIP_FG = '#0b0b0f'
 export const CHIP_BG = '#e879f9'
 export const COMMAND = 'img'
+/** This plugin's name, as a placed row's `plugin` reads before any `@marketplace`. */
+export const PLUGIN_NAME = 'images'
 /** Where the store keeps /img on|off across sessions. */
 export const STORE_BAND = 'band'
+/** Where the store keeps /img under on|off across sessions. */
+export const STORE_UNDER = 'under'
 /** A timer's work starts this long after the hook or press that set it. */
 export const DELAY_MS = 10
 /** How often the image file is looked for, and for how long in all. */
@@ -33,7 +38,7 @@ export const TMP_ROOT = '/private/tmp'
 /** The scratch folder for the BMPs, under HOME. */
 export const CACHE_DIR = '.cache/zehui-mods/images'
 
-export const USAGE = `Usage: /${COMMAND} [<n> | on | off | clear]   (/${COMMAND} shows the last tiles again; <n> draws [Image #n] of this session; off stops the automatic tiles; clear drops them)`
+export const USAGE = `Usage: /${COMMAND} [<n> | on | off | clear | under on | under off]   (/${COMMAND} shows the last tiles again; <n> draws [Image #n] of this session; off stops the automatic tiles; clear drops them; under on|off: the thumbnails under the sent prompt)`
 
 // --- the options, held to their listed values
 
@@ -58,6 +63,12 @@ export const lingerOf = (option: unknown): Linger => LINGERS.find(l => l === opt
 
 /** Whether a sent prompt's images are drawn on their own: the store's on|off, else the `auto` option. */
 export const isAutoOn = (band: string, option: unknown): boolean => (band === 'on' || band === 'off' ? band === 'on' : autoOf(option) === 'on')
+
+/** The `under` option: 'on' unless it says 'off'. */
+export const underOf = (option: unknown): 'on' | 'off' => (option === 'off' ? 'off' : 'on')
+
+/** Whether a sent prompt gets a thumbnail row under it: the store's /img under on|off, else the `under` option. */
+export const isUnderOn = (under: string, option: unknown): boolean => (under === 'on' || under === 'off' ? under === 'on' : underOf(option) === 'on')
 
 // --- the tags
 
@@ -262,11 +273,19 @@ export const fromBase64 = (text: string): Uint8Array => (Uint8Array as unknown a
 // --- the command
 
 /** What /img was asked. */
-export type ImgArgs = { kind: 'show' } | { kind: 'draw'; n: number } | { kind: 'on' } | { kind: 'off' } | { kind: 'clear' } | { kind: 'usage' }
+export type ImgArgs =
+  | { kind: 'show' }
+  | { kind: 'draw'; n: number }
+  | { kind: 'on' }
+  | { kind: 'off' }
+  | { kind: 'clear' }
+  | { kind: 'under'; value: 'on' | 'off' }
+  | { kind: 'usage' }
 
 export function parseArgs(args: string): ImgArgs {
   const words = args.trim().toLowerCase().split(/\s+/).filter(Boolean)
   if (words.length === 0) return { kind: 'show' }
+  if (words.length === 2 && words[0] === 'under' && (words[1] === 'on' || words[1] === 'off')) return { kind: 'under', value: words[1] }
   if (words.length > 1) return { kind: 'usage' }
   const [w] = words
   const tag = /^(?:#)?(\d{1,6})$/.exec(w!)
@@ -404,11 +423,28 @@ export function stackRow(row: RenderElement, below: unknown): RenderElement {
  */
 export function shrinkTile(t: ImageTile, toRows: number): ImageTile {
   if (!t.cells || t.rows <= toRows || toRows < 1) return t
+  return resampled(t, Math.max(1, Math.round((t.columns * toRows) / t.rows)), toRows)
+}
+
+// --- the thumbnails under the sent prompt
+
+/** A thumbnail's largest box, in cells. */
+export const THUMB_COLUMNS = 12
+export const THUMB_ROWS = 6
+/** The most thumbnails kept (by tag), and the most placed rows remembered. */
+export const THUMBS_KEPT = 24
+export const PLACED_KEPT = 12
+/** The placed row's id is this, the load's stamp, `-` and the run's number. */
+export const PLACE_PREFIX = 'img-'
+/** What a caption shows after the tag while its tile is not built yet. */
+export const PENDING_MARK = '\u2026'
+
+/** A tile's cells resampled to `columns` by `rows` (nearest cell, no averaging). */
+function resampled(t: ImageTile, columns: number, rows: number): ImageTile {
   const src = new Uint32Array(fromBase64(t.cells).buffer)
-  const columns = Math.max(1, Math.round((t.columns * toRows) / t.rows))
-  const words = new Uint32Array(columns * toRows * 3)
-  for (let y = 0; y < toRows; y++) {
-    const sy = Math.min(t.rows - 1, Math.floor((y * t.rows) / toRows))
+  const words = new Uint32Array(columns * rows * 3)
+  for (let y = 0; y < rows; y++) {
+    const sy = Math.min(t.rows - 1, Math.floor((y * t.rows) / rows))
     for (let x = 0; x < columns; x++) {
       const sx = Math.min(t.columns - 1, Math.floor((x * t.columns) / columns))
       const from = (sy * t.columns + sx) * 3
@@ -418,5 +454,67 @@ export function shrinkTile(t: ImageTile, toRows: number): ImageTile {
       words[to + 2] = src[from + 2]!
     }
   }
-  return { ...t, columns, rows: toRows, cells: toBase64(new Uint8Array(words.buffer)) }
+  return { ...t, columns, rows, cells: toBase64(new Uint8Array(words.buffer)) }
 }
+
+/**
+ * A tile drawn small for the row under the sent prompt: at most THUMB_COLUMNS
+ * by THUMB_ROWS cells, its shape kept (shrinkTile); a tile already that small,
+ * or one with no cells, is itself. A one-row strip still too wide is narrowed.
+ */
+export function thumbOf(tile: ImageTile): ImageTile {
+  if (!tile.cells || tile.columns <= 0 || tile.rows <= 0) return tile
+  if (tile.columns <= THUMB_COLUMNS && tile.rows <= THUMB_ROWS) return tile
+  const toRows = Math.max(1, Math.min(THUMB_ROWS, tile.rows, Math.floor((tile.rows * THUMB_COLUMNS) / tile.columns)))
+  const small = shrinkTile(tile, toRows)
+  return small.columns > THUMB_COLUMNS ? resampled(small, THUMB_COLUMNS, small.rows) : small
+}
+
+/** The thumbnails with `tile` stored under its tag: at most THUMBS_KEPT, the lowest tags (the oldest in a session) dropped first, never `tile` itself. */
+export function withThumb(thumbs: Readonly<Record<string, ImageTile>>, tile: ImageTile): Record<string, ImageTile> {
+  const out: Record<string, ImageTile> = { ...thumbs, [String(tile.n)]: tile }
+  const others = Object.keys(out)
+    .filter(k => k !== String(tile.n))
+    .sort((a, b) => Number(a) - Number(b))
+  for (const k of others.slice(0, Math.max(0, others.length - (THUMBS_KEPT - 1)))) delete out[k]
+  return out
+}
+
+type PlacedRow = { tags: number[]; at: number; done?: true }
+
+/** A placed row copied, its `done` kept only when set. */
+const copyRow = (v: PlacedRow): PlacedRow => ({ tags: [...v.tags], at: v.at, ...(v.done ? { done: true as const } : {}) })
+
+/** The placed rows with `id` added (or moved to the newest), `done` when its run already ended: at most PLACED_KEPT, the oldest by `at` dropped first. */
+export function withPlaced(
+  placed: Readonly<Record<string, PlacedRow>>,
+  id: string,
+  tags: readonly number[],
+  at: number,
+  isDone = false,
+): Record<string, PlacedRow> {
+  const rest = Object.entries(placed).filter(([k]) => k !== id)
+  const row: PlacedRow = { tags: [...tags], at, ...(isDone ? { done: true as const } : {}) }
+  // A stable sort: two rows of one time keep their order.
+  const kept = [...rest, [id, row] as const].sort((a, b) => a[1].at - b[1].at).slice(-PLACED_KEPT)
+  return Object.fromEntries(kept.map(([k, v]) => [k, copyRow(v)]))
+}
+
+/** The placed rows with `id`'s run marked ended; unchanged when `id` is no longer kept or already done. */
+export function withDone(placed: Readonly<Record<string, PlacedRow>>, id: string): Record<string, PlacedRow> {
+  const row = placed[id]
+  if (!row || row.done) return { ...placed }
+  return { ...placed, [id]: { ...copyRow(row), done: true } }
+}
+
+/** A placed row's `plugin` (a bare name or `name@marketplace`) without its marketplace. */
+export const bareName = (plugin: string): string => plugin.split('@')[0] ?? ''
+
+/**
+ * The caption under a thumbnail: `[Image #n] WxH`, the tag alone when the size
+ * is not known, `[Image #n] …` while it is not built, and the tag alone once
+ * the row's run is done (`isDone`) with no thumbnail for it (never built, or
+ * dropped since).
+ */
+export const underCaptionOf = (n: number, thumb: ImageTile | undefined, isDone = false): string =>
+  thumb ? captionOf(thumb) : isDone ? tagText(n) : `${tagText(n)} ${PENDING_MARK}`

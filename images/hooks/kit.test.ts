@@ -24,6 +24,9 @@ import {
   tileGrid,
   withTile,
   shrinkTile,
+  thumbOf,
+  THUMB_COLUMNS,
+  THUMB_ROWS,
   toBase64,
   fromBase64,
 } from './kit'
@@ -196,4 +199,31 @@ test('kit: shrinkTile keeps the shape and samples the nearest cell', () => {
   expect(out[1]).toBe(0) // row 0, col 0 of the source
   expect(out[4]).toBe(2) // row 0, col 2 of the source
   expect(shrinkTile(tile, 6)).toBe(tile)
+})
+
+test('kit: thumbOf draws a tile at most 12 by 6 cells, via shrinkTile', () => {
+  expect([THUMB_COLUMNS, THUMB_ROWS]).toEqual([12, 6])
+  const big = { n: 1, w: 800, h: 400, columns: 24, rows: 12, cells: rasterCells(parseBmp(makeBmp(48, 24, 24, false, () => [9, 9, 9]))!, 24, 12) }
+  const thumb = thumbOf(big)
+  expect([thumb.columns, thumb.rows]).toEqual([12, 6])
+  expect(decodeCells(thumb.cells).length).toBe(12 * 6)
+  expect([thumb.n, thumb.w, thumb.h]).toEqual([1, 800, 400])
+  const small = { n: 2, w: 100, h: 80, columns: 10, rows: 4, cells: rasterCells(parseBmp(makeBmp(10, 8, 24, false, () => [1, 2, 3]))!, 10, 4) }
+  expect(thumbOf(small)).toBe(small)
+  const text = textTile(3)
+  expect(thumbOf(text)).toBe(text)
+  // A wide tile (24 by 6) keeps its shape: 12 by 3.
+  const wide = { ...big, rows: 6, cells: rasterCells(parseBmp(makeBmp(48, 24, 24, false, () => [9, 9, 9]))!, 24, 6) }
+  expect([thumbOf(wide).columns, thumbOf(wide).rows]).toEqual([12, 3])
+  // A one-row strip wider than 12 is narrowed to 12.
+  const strip = { ...big, rows: 1, columns: 32, cells: rasterCells(parseBmp(makeBmp(64, 2, 24, false, () => [9, 9, 9]))!, 32, 1) }
+  expect([thumbOf(strip).columns, thumbOf(strip).rows]).toEqual([12, 1])
+  expect(decodeCells(thumbOf(strip).cells).length).toBe(12)
+})
+
+test('kit: /img under on | off', async () => {
+  expect(parseArgs('under on')).toEqual({ kind: 'under', value: 'on' })
+  expect(parseArgs('UNDER off')).toEqual({ kind: 'under', value: 'off' })
+  expect(parseArgs('under')).toEqual({ kind: 'usage' })
+  expect(parseArgs('under maybe')).toEqual({ kind: 'usage' })
 })

@@ -39,3 +39,8 @@ ship-review round 1 [phase 5 queue]: 9 confirmed / 9 fixed / 0 left, per lens: c
 ship-review round 2 [phase 5 queue]: 2 confirmed / 2 fixed / 0 left, per lens: correctness 2 (re-review of fix round 1; both low)
 ship-review check [phase 5 queue]: 2 confirmed / 0 fixed / 2 left (spot check of fix round 2; both low)
 review-loop [phase 5 queue]: budget-spent (2 rounds, 2 non-HIGH deferred) @ f2df7d8a47daf9ba4faed5db8da1959326733ab6 6fbbee17de607baf6b7c2bd8905d6e3eaf782abd
+
+ship-review round 1 [phase 6 comfort]: 17 confirmed / 17 fixed / 0 left, per lens for images: correctness 5, coverage 3, security 2, conformance 2; for agents: coverage 2, conformance 2, correctness 1
+ship-review round 2 [phase 6 comfort]: 1 confirmed / 1 fixed / 0 left, per lens: correctness 1 (re-review of fix round 1; images)
+ship-review check [phase 6 comfort]: 1 confirmed / 1 fixed / 0 left (spot check of fix round 2; images, medium, fixed by the orchestrator, gate re-run green; agents 0)
+review-loop [phase 6 comfort]: budget-spent (2 rounds, 0 non-HIGH deferred) @ 9a0e4039f06e86edcb79ebbcc213f4f08ff57236 fb6840341cc7f68d23ae7998f2afab60466b0b80

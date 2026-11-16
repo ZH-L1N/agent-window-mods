@@ -47,6 +47,64 @@ the next prompt.
   HANDOFF 30, CACHE 40, AGENTS 50, GOAL 60, HERE 70, NEXT 80, IMAGES 90);
   other bands follow.
 
+## The row under the sent prompt
+
+With `under` on (the default), the prompt's images also get a small labelled
+row in the transcript, right under the prompt that carried them:
+
+```
+> compare [Image #1] with [Image #2]
+  ▀▀▀▀▀▀▀▀▀▀▀▀ ▀▀▀▀▀▀▀▀▀▀▀▀
+  [Image #1] 1376x688  [Image #2] 1920x1080
+```
+
+- When the run for a sent prompt starts (from the same timer, after its turn
+  starts), it places a transcript row with
+  `$.ui.place({ id: 'img-<stamp>-<run>' })` (`<stamp>`: the clock at this
+  load's session start, in base 36, so a row placed after a reload never
+  takes the id of an older row still in the transcript) and records the id
+  with the prompt's tags (the newest 12 rows are remembered; an older one is
+  passed on and draws nothing).
+- A prompt typed while a turn is running: the band starts at once as before,
+  but its row waits for the next main-loop turn start, when that prompt
+  joins the transcript as a turn of its own. When the running turn ends and
+  no turn starts within 1.5 seconds (the prompt was delivered into the turn
+  that ended), the row is placed then, so it is never left for the person's
+  next prompt; a prompt sent with "wait its turn" (`ctrl+x enter`) is always
+  left to its own turn. Each waiting row is placed once, in order. The mod
+  does not hook the model's stream to place the row sooner: such a hook
+  would stand in every response of every session.
+  Thumbnails built meanwhile show as soon as it is placed. A `/clear` or a
+  resume drops a row still waiting.
+- Each tile the pipeline builds is also kept drawn small: at most 12 columns
+  by 6 rows, in the same shape (the newest 24 are kept, by tag).
+- The row's hook draws, for each tag, the thumbnail and a dim caption
+  `[Image #n] WxH`; `[Image #n] …` while the tile is not built yet. Once the
+  row's run has ended or was stopped (a newer prompt, `/img off`,
+  `/img clear`), a tag with no thumbnail (never built, or dropped from the
+  newest 24 since) reads `[Image #n]`, so a row never claims to be loading
+  for good. It draws only rows this plugin placed (every plugin's hook hears
+  every placed row), and only in the terminal.
+- `UserMessage` carries no attachments, and another mod may redraw the
+  prompt's row, so the thumbnails sit in a row of their own instead.
+- It uses the band's pipeline but not its switches: with `/img off` or the
+  `auto` option off and `under` on, a sent prompt's tiles are still built,
+  for this row only, and nothing is added to the band. `/img off` and the
+  `auto` option keep their meaning for the band row only, and
+  `/img under on | off` does not change the band row. `/img under off` places
+  no new rows; rows already placed stay.
+- Unverified in a live session: where the row lands on screen (tested only
+  against the engine's test kit). To check it, paste an image, send the
+  prompt, and look for the row right under it; also try a prompt typed while
+  a turn is running, both while the model is using tools (the prompt is then
+  likely delivered into the running turn, and the row placed at that turn's
+  end, below its answer) and while it writes its last answer (the prompt then
+  likely waits for a turn of its own; if the row lands above that prompt, it
+  was placed at the earlier turn's end, before the prompt joined).
+- Display only: the model and the transcript file never read the row, and a
+  `--resume` brings none back. A `/clear` or a resume forgets the rows and
+  the thumbnails.
+
 ## Why not before you send
 
 While the tag sits in the prompt box, a user-scope mod gets no pasted
@@ -64,10 +122,11 @@ drew placeholder tiles in the box; that is gone.)
 | `size` | `12`, `16`, `24`, `32` | `24` | Tile width in columns; the height follows the image, at most 24 rows. |
 | `auto` | `on`, `off` | `on` | Draw a sent prompt's images on their own. `/img on` and `/img off` override it. |
 | `linger` | `turn`, `2min`, `until-cleared` | `turn` | `turn`: until the next prompt is sent. `2min`: two minutes after it showed, or the next prompt if sooner. `until-cleared`: until `/img clear`; new images are added to the row. |
+| `under` | `on`, `off` | `on` | Place a labelled thumbnail row in the transcript under the sent prompt. `/img under on` and `/img under off` override it. |
 
 ## Commands
 
-`/img [<n> | on | off | clear]`
+`/img [<n> | on | off | clear | under on | under off]`
 
 - `/img`: show the last tiles again (after the next prompt cleared them).
 - `/img <n>`: draw `[Image #n]` of this session (works with `auto` off too).
@@ -75,6 +134,9 @@ drew placeholder tiles in the box; that is gone.)
   row; kept for the next session.
 - `/img on`: draw them again.
 - `/img clear`: drop the tiles.
+- `/img under off`: place no thumbnail row under the next sent prompts (rows
+  already placed stay); kept for the next session. `/img under on`: place
+  them again.
 
 The button works only while the band has focus (ctrl+x tab, or a click in
 Claude Code's fullscreen renderer; the classic renderer reports no clicks), so

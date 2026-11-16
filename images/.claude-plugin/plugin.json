@@ -1,7 +1,7 @@
 {
   "name": "images",
-  "version": "0.2.1",
-  "description": "After a prompt is sent, an IMAGES band above the prompt draws each pasted [Image #n] as a half-block thumbnail (macOS sips turns the engine's PNG into a small BMP), with [Image #n] WxH beneath; cleared when the next prompt is sent. /img shows the last tiles again, /img <n> draws one image of this session, /img on | off | clear.",
+  "version": "0.3.0",
+  "description": "After a prompt is sent, an IMAGES band above the prompt draws each pasted [Image #n] as a half-block thumbnail (macOS sips turns the engine's PNG into a small BMP), with [Image #n] WxH beneath; cleared when the next prompt is sent. A small labelled thumbnail row is also placed in the transcript under the sent prompt. /img shows the last tiles again, /img <n> draws one image of this session, /img on | off | clear, /img under on | off.",
   "author": {
     "name": "Zehui Lin"
   },
@@ -39,6 +39,16 @@
         "turn",
         "2min",
         "until-cleared"
+      ]
+    },
+    "under": {
+      "type": "string",
+      "title": "Thumbnails under the sent prompt",
+      "description": "on (default) or off: a small labelled row of the sent prompt's images (at most 12 by 6 cells each) placed in the transcript under it. /img under on | off overrides it and is kept for the next session. It does not need the automatic tiles: with auto or /img off, the images are still drawn here, only not in the band.",
+      "default": "on",
+      "options": [
+        "on",
+        "off"
       ]
     }
   }

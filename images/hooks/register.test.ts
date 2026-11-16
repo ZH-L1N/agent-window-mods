@@ -206,7 +206,7 @@ test('command: /img n draws that image of this session from a timer; a missing o
   expect(await w.command('maybe')).toBe(USAGE)
 })
 
-test('command: /img off stops the automatic tiles (kept in the store), /img n still draws; /img on again', async ($, on) => {
+test('command: /img off stops the automatic tiles (kept in the store), /img n still draws; /img on again', { options: { under: 'off' } }, async ($, on) => {
   const w = await world($, on)
   await w.start()
   w.paste(1)
@@ -245,7 +245,7 @@ test('command: /img off during a run stops it before its next tile; the row stay
   expect(await rowView($)).toBeNull()
 })
 
-test('options: auto off draws nothing on its own; a stored on wins', { options: { auto: 'off' } }, async ($, on) => {
+test('options: auto off draws nothing on its own; a stored on wins', { options: { auto: 'off', under: 'off' } }, async ($, on) => {
   const w = await world($, on)
   await w.start()
   w.paste(1)
@@ -258,7 +258,7 @@ test('options: auto off draws nothing on its own; a stored on wins', { options: 
   expect(tilesOf(w).map(t => t.n)).toEqual([1])
 })
 
-test('command: a stored off holds in the next session', async ($, on) => {
+test('command: a stored off holds in the next session', { options: { under: 'off' } }, async ($, on) => {
   const w = await world($, on, { stored: { band: 'off' } })
   await w.start()
   expect(w.state('band')).toBe('off')

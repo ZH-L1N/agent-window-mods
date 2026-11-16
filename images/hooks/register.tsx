@@ -7,21 +7,69 @@
 // The next prompt clears the row (option linger: turn, 2min or
 // until-cleared). /img shows the last tiles again, /img <n> draws one image of
 // this session, /img off|on (kept in the store) and /img clear; the row's
-// `clear` Button is /img clear, run from a timer.
+// `clear` Button is /img clear, run from a timer. With `under` on (option, or
+// /img under on|off kept in the store), the run first places a transcript row
+// under the sent prompt (`img-<stamp>-<run>`, its tags in `images.placed`, the
+// newest 12), and every tile built is also kept small in `images.thumbs` (the
+// newest 24); under.tsx draws that row. A prompt typed over a running turn has
+// its row placed instead at the next main-loop turn.start, or at the running
+// turn's end when the prompt was delivered into that turn and no turn of its
+// own starts. The mod does not hook turn.step to place it sooner: a hook there
+// would stand in the stream of every model response of every session.
+// /img off and the auto option reach the band only: with them off
+// and `under` on, the tiles are built for the row alone. A run that ends or is
+// stopped marks its row done. A /clear or resume forgets rows and thumbnails.
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, PluginOptions, PromptSubmitInput, Register, Timer } from 'claude-code'
 
 import type { ImageTile } from '../types'
-import { COMMAND, DELAY_MS, LINGER_MS, STORE_BAND, USAGE, captionOf, isAutoOn, lingerOf, parseArgs, sizeOf, tagText, tagsOf, withTile } from './kit'
+import {
+  COMMAND,
+  DELAY_MS,
+  LINGER_MS,
+  PLACE_PREFIX,
+  STORE_BAND,
+  STORE_UNDER,
+  USAGE,
+  captionOf,
+  isAutoOn,
+  isUnderOn,
+  lingerOf,
+  parseArgs,
+  sizeOf,
+  tagText,
+  tagsOf,
+  thumbOf,
+  withDone,
+  withPlaced,
+  withThumb,
+  withTile,
+} from './kit'
 import { buildTile, pipelineOf } from './pipeline'
 import { drawRow } from './row'
+import { onPlaced } from './under'
 
 const tiles = atom({ plugin: 'images', key: 'tiles' } as const, [])
 const shown = atom({ plugin: 'images', key: 'shown' } as const, false)
 const band = atom({ plugin: 'images', key: 'band' } as const, '')
+const under = atom({ plugin: 'images', key: 'under' } as const, '')
+const placed = atom({ plugin: 'images', key: 'placed' } as const, {})
+const thumbs = atom({ plugin: 'images', key: 'thumbs' } as const, {})
+
+/** A sent prompt's tags and who wants them: the band above the prompt, the row under it. */
+type Batch = { tags: number[]; band: boolean; under: boolean }
+/** A row under a sent prompt: its place id and tags; isPlaced once it is placed, isDone once its run ended or stopped. */
+type Row = { id: string; tags: number[]; isPlaced: boolean; isDone: boolean; isHeld?: boolean }
 
 // The tags of the last sent prompt, waiting for its main-loop turn.start.
-let pending: number[] = []
+let pending: Batch | null = null
+// The rows of prompts typed over a running turn, oldest first, placed at the
+// next main-loop turn.start, else at the running turn's end.
+let waiting: Row[] = []
+// This load's session.start in base 36, in every place id: a hot reload
+// restarts the row count while older rows still stand in the transcript.
+let stamp: string | null = null
+let rowCount = 0
 // Bumped by every sent prompt, new batch, /img off, /img clear and session change: a run
 // that started under an older value stops and writes nothing.
 let generation = 0
@@ -60,15 +108,99 @@ async function addTile($: EngineInterface, tile: ImageTile, options: PluginOptio
   if (!isShown) await show($, options)
 }
 
-/** A sent prompt's images, one after another; stops when a newer prompt, batch or clear comes. */
-async function runBatch($: EngineInterface, list: readonly number[], options: PluginOptions): Promise<void> {
-  const mine = ++generation
-  const p = await pipelineOf($, () => mine === generation)
-  for (const n of list) {
-    const tile = await buildTile($, n, sizeOf(options.size), p)
-    if (tile === null || mine !== generation) return
-    await addTile($, tile, options)
+/** A built tile, drawn small, kept for the rows under the sent prompts. */
+async function keepThumb($: EngineInterface, tile: ImageTile): Promise<void> {
+  const small = thumbOf(tile)
+  await update($, thumbs, all => withThumb(all, small))
+}
+
+/** This load's stamp: set at session.start, or read here at first use. */
+async function stampOf($: EngineInterface): Promise<string> {
+  if (stamp === null) stamp = Math.floor(await $.clock.now()).toString(36)
+  return stamp
+}
+
+/** A new row for `tags`, not placed yet: `img-<stamp>-<run>`, never an id of an earlier load. */
+async function newRow($: EngineInterface, tags: readonly number[]): Promise<Row> {
+  const id = `${PLACE_PREFIX}${await stampOf($)}-${++rowCount}`
+  return { id, tags: [...tags], isPlaced: false, isDone: false }
+}
+
+/** The row under the sent prompt: placed at the transcript's end (the prompt has just joined it), its id recorded with the tags. */
+async function placeRow($: EngineInterface, row: Row): Promise<void> {
+  row.isPlaced = true
+  try {
+    await $.ui.place({ id: row.id })
+    const at = await $.clock.now()
+    await update($, placed, rows => withPlaced(rows, row.id, row.tags, at, row.isDone))
+    // The run may have ended while the row was being recorded.
+    if (row.isDone) await update($, placed, rows => withDone(rows, row.id))
+  } catch {
+    // No row under the prompt; the band row still draws.
   }
+}
+
+/** The row's run ended or stopped: a tag with no thumbnail stops reading as loading. */
+async function markDone($: EngineInterface, row: Row): Promise<void> {
+  row.isDone = true
+  if (row.isPlaced) await update($, placed, rows => withDone(rows, row.id))
+}
+
+/**
+ * A sent prompt's images, one after another; stops when a newer prompt, batch
+ * or clear comes. With `under`, the row is placed first (unless `row` is one
+ * waiting for its turn) and each tile is kept small for it; with `band`, each
+ * tile is added to the band. However the run ends, its row is marked done.
+ */
+async function runBatch($: EngineInterface, batch: Batch, options: PluginOptions, waitingRow?: Row): Promise<void> {
+  const mine = ++generation
+  let row = waitingRow ?? null
+  try {
+    if (batch.under && row === null) {
+      row = await newRow($, batch.tags)
+      await placeRow($, row)
+    }
+    const p = await pipelineOf($, () => mine === generation)
+    for (const n of batch.tags) {
+      const tile = await buildTile($, n, sizeOf(options.size), p)
+      if (tile === null || mine !== generation) return
+      if (batch.under) await keepThumb($, tile)
+      if (batch.band) await addTile($, tile, options)
+    }
+  } finally {
+    if (row !== null) await markDone($, row).catch(() => {})
+  }
+}
+
+/** At a main-loop turn.start: the waiting rows of `due` still waiting, each placed once, in order; then `batch`'s run. */
+async function startTurn($: EngineInterface, due: readonly Row[], batch: Batch | null, options: PluginOptions): Promise<void> {
+  for (const row of due) {
+    const i = waiting.indexOf(row)
+    if (i < 0) continue
+    waiting.splice(i, 1)
+    await placeRow($, row)
+  }
+  if (batch !== null) await runBatch($, batch, options)
+}
+
+/** After a main-loop turn ends, the next main-loop turn.start gets this long to place the waiting rows itself. */
+const END_GRACE_MS = 1500
+
+/**
+ * At a main-loop turn.complete: the rows waiting now, placed after a grace,
+ * each once, in order. A prompt held for a turn of its own starts that turn
+ * right after this one ends; its turn.start places the row under the prompt
+ * and this timer then finds the row gone. Only a prompt that was delivered
+ * into the turn that just ended is still waiting after the grace. A prompt the
+ * person asked to wait its turn (`wait`) always starts one, so its row is left
+ * to that turn.start however late it comes.
+ */
+function placeWaiting($: EngineInterface, options: PluginOptions): void {
+  const due = waiting.filter(row => row.isHeld !== true)
+  if (due.length === 0) return
+  $.clock.after(END_GRACE_MS, () => {
+    void startTurn($, due, null, options).catch(() => {})
+  })
 }
 
 /** /img <n>: that image of this session; a toast when only its tag could be drawn. */
@@ -77,6 +209,7 @@ async function runOne($: EngineInterface, n: number, options: PluginOptions): Pr
   const p = await pipelineOf($, () => mine === generation)
   const tile = await buildTile($, n, sizeOf(options.size), p)
   if (tile === null || mine !== generation) return
+  await keepThumb($, tile)
   await addTile($, tile, options)
   if (!tile.cells) await $.ui.toast(`${tagText(n)}: no thumbnail (not in this session's images folder, or no sips) (/${COMMAND} ${n})`)
 }
@@ -84,16 +217,16 @@ async function runOne($: EngineInterface, n: number, options: PluginOptions): Pr
 /** /img clear and the clear button: no tiles, no row, any run stopped. */
 async function clearAll($: EngineInterface): Promise<void> {
   generation++
-  pending = []
+  pending = null
   stopLinger()
   await update($, tiles, () => [])
   await update($, shown, () => false)
 }
 
-/** Writes /img on|off to the store; the words to add to the reply when it could not be kept. */
-async function persist($: EngineInterface, value: 'on' | 'off'): Promise<string> {
+/** Writes /img on|off (or /img under on|off) to the store; the words to add to the reply when it could not be kept. */
+async function persist($: EngineInterface, value: 'on' | 'off', key: string = STORE_BAND): Promise<string> {
   try {
-    await $.store.set(STORE_BAND, value)
+    await $.store.set(key, value)
     return ''
   } catch {
     return ' (not saved for the next session)'
@@ -107,13 +240,18 @@ const isPersonPrompt = (e: PromptSubmitInput): boolean =>
 export const register: Register = (on, options: PluginOptions) => {
   on('session.start', async ($, e, next) => {
     const started = await next(e)
-    pending = []
+    pending = null
     generation++
     stopLinger()
+    try {
+      stamp = Math.floor(await $.clock.now()).toString(36)
+    } catch {
+      // The stamp is read at the first row instead.
+    }
     await $.command.register({
       name: 'img',
-      description: 'IMAGES row: show the last image tiles again, draw [Image #n] of this session, turn the automatic tiles on or off, or clear them',
-      argumentHint: '<n> | on | off | clear',
+      description: 'IMAGES row: show the last image tiles again, draw [Image #n] of this session, turn the automatic tiles on or off, clear them, or turn the thumbnails under the sent prompt on or off',
+      argumentHint: '<n> | on | off | clear | under on | under off',
     })
     try {
       const stored = await $.store.get(STORE_BAND)
@@ -121,19 +259,29 @@ export const register: Register = (on, options: PluginOptions) => {
     } catch {
       // No store: the auto option applies.
     }
+    try {
+      const stored = await $.store.get(STORE_UNDER)
+      await update($, under, () => (stored === 'on' || stored === 'off' ? stored : ''))
+    } catch {
+      // No store: the under option applies.
+    }
     return started
   })
 
   // A sent prompt clears the row (unless linger=until-cleared) and leaves its
   // tags for its turn. Done before next: the main loop's turn.start runs inside it.
+  // The band's switches (/img off, auto) and `under` are each asked on their own.
   on('prompt.submit', async ($, e, next) => {
-    let mine: number[] = []
+    let mine: Batch | null = null
     try {
       if (isPersonPrompt(e)) {
         generation++
-        pending = []
+        pending = null
         if (lingerOf(options.linger) !== 'until-cleared') await hide($)
-        if (isAutoOn(await read($, band), options.auto)) mine = tagsOf(e.text)
+        const isBand = isAutoOn(await read($, band), options.auto)
+        const isUnder = isUnderOn(await read($, under), options.under)
+        const tags = isBand || isUnder ? tagsOf(e.text) : []
+        if (tags.length > 0) mine = { tags, band: isBand, under: isUnder }
         pending = mine
       }
     } catch {
@@ -141,14 +289,22 @@ export const register: Register = (on, options: PluginOptions) => {
     }
     const r = await next(e)
     try {
-      if (pending === mine && mine.length > 0) {
+      if (mine !== null && pending === mine) {
+        const batch = mine
         if (r.drop !== undefined) {
-          pending = []
+          pending = null
         } else if (e.turnId !== undefined) {
-          // Typed over a running turn: no turn.start of its own may come soon, so the run starts now.
-          pending = []
+          // Typed over a running turn: no turn.start of its own may come soon, so
+          // the band's run starts now; the row under it waits for the next
+          // main-loop turn.start, or for this turn's end.
+          pending = null
+          const row = batch.under ? await newRow($, batch.tags) : undefined
+          if (row) {
+            row.isHeld = e.wait === true
+            waiting.push(row)
+          }
           $.clock.after(DELAY_MS, () => {
-            void runBatch($, mine, options).catch(() => {})
+            void runBatch($, batch, options, row).catch(() => {})
           })
         }
       }
@@ -158,15 +314,17 @@ export const register: Register = (on, options: PluginOptions) => {
     return r
   }).catch(($, e, next) => (next.called ? undefined : next(e)))
 
-  // The main loop's turn: the sent prompt's images, from a timer.
+  // The main loop's turn: the rows of prompts typed over the last turn, then
+  // the sent prompt's images, from a timer.
   on('turn.start', async ($, e, next) => {
     const started = await next(e)
     try {
-      if (e.agentId === undefined && pending.length > 0) {
-        const list = pending
-        pending = []
+      if (e.agentId === undefined && (pending !== null || waiting.length > 0)) {
+        const batch = pending
+        const due = [...waiting]
+        pending = null
         $.clock.after(DELAY_MS, () => {
-          void runBatch($, list, options).catch(() => {})
+          void startTurn($, due, batch, options).catch(() => {})
         })
       }
     } catch {
@@ -175,12 +333,28 @@ export const register: Register = (on, options: PluginOptions) => {
     return started
   }).catch(($, e, next) => (next.called ? undefined : next(e)))
 
+  // The main loop's turn ends with rows still waiting: unless a turn of their
+  // prompt's own starts within the grace, they are placed then, so none is left
+  // for the person's next prompt.
+  on('turn.complete', async ($, e, next) => {
+    const ended = await next(e)
+    try {
+      if (e.agentId === undefined) placeWaiting($, options)
+    } catch {
+      // Nothing more to do.
+    }
+    return ended
+  }).catch(($, e, next) => next(e))
+
   // A /clear or an in-process resume puts another conversation in this process.
   on('session.end', async ($, e, next) => {
     const result = await next(e)
     if (e.reason === 'clear' || e.reason === 'resume') {
+      waiting = []
       try {
         await clearAll($)
+        await update($, placed, () => ({}))
+        await update($, thumbs, () => ({}))
       } catch {
         // Nothing more to do.
       }
@@ -214,13 +388,20 @@ export const register: Register = (on, options: PluginOptions) => {
           await update($, band, () => 'off')
           // A run in flight stops before its next tile, so the row stays hidden.
           generation++
-          pending = []
+          pending = null
           await hide($)
           return { text: `Image tiles off: /${COMMAND} on turns them on again; /${COMMAND} <n> still draws one.${await persist($, 'off')}` }
         }
         case 'clear':
           await clearAll($)
           return { text: 'Image tiles cleared.' }
+        case 'under': {
+          const value = asked.value
+          await update($, under, () => value)
+          return value === 'on'
+            ? { text: `Image thumbnails under the sent prompt on: a sent prompt's images are drawn under it in the transcript.${await persist($, 'on', STORE_UNDER)}` }
+            : { text: `Image thumbnails under the sent prompt off: /${COMMAND} under on turns them on again.${await persist($, 'off', STORE_UNDER)}` }
+        }
         default:
           return { text: USAGE }
       }
@@ -228,6 +409,9 @@ export const register: Register = (on, options: PluginOptions) => {
       return { text: `/${COMMAND}: ${whyOf(err)}` }
     }
   })
+
+  // The row under the sent prompt (under.tsx).
+  onPlaced(on)
 
   on('ui.render', { component: 'AbovePrompt' }, ($, e, next) =>
     drawRow($, e, () => next(e), {
