@@ -1,0 +1,25 @@
+{
+  "name": "strip",
+  "version": "0.1.0",
+  "description": "One strip of quiet pills above the prompt in place of the SYS, PLAN, HANDOFF and CACHE rows: context, cache, diff, tests, agents, queue, system and peers, with a STOP and a health pill when needed. It reads the other mods' state, orders the whole band, and opens a context, a system and a last-turn diff pane. /strip.",
+  "author": {
+    "name": "Zehui Lin"
+  },
+  "license": "MIT",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "rows": {
+      "type": "string",
+      "title": "The SYS, PLAN, HANDOFF and CACHE rows",
+      "description": "hide: the strip stands in their place (a HANDOFF row with something to act on still shows); show: they are drawn under the strip as before. /strip rows show|hide overrides this.",
+      "default": "hide",
+      "options": ["hide", "show"]
+    },
+    "transparentPanes": {
+      "type": "boolean",
+      "title": "Panes without a background fill",
+      "description": "On: a pane any mod opens without a background colour of its own is drawn with no fill, so the terminal shows through. /strip panes clear|solid overrides this.",
+      "default": true
+    }
+  }
+}

@@ -1,9 +1,10 @@
 # Zehui's Claude Code mods
 
 A local folder marketplace. Each subfolder is one mod (a plugin with a hooks
-module). Plugins installed from here are read from this folder itself, so an
-edit takes effect after `/reload-plugins` in a running session, with no
-reinstall.
+module). A mod installed from here is copied into the plugin cache under its
+version, and new sessions load that copy. After an edit: raise `version` in
+the mod's `plugin.json`, run `claude plugin update <mod>@zehui-mods`, then
+`/reload-plugins` in a running session.
 
 ## Setup on a new machine
 
@@ -33,15 +34,28 @@ claude plugin install token-weather@zehui-mods --scope user
 | `redgreen/` | Tests pane: every test run Claude makes (vitest, jest, pytest, cargo, go, bun, deno) is parsed into a pass/fail list with the picked failure's detail (assertion, diff, code frame) and the session's last 50 runs; a failing run opens the pane, a green one only updates the status line (`tests ✓ 4`, `tests ✗ 3/4`); `/tests`, `/tests clear`; `p` / `n` / `l` step through runs, `k` / `j` through failures; its `redgreen.runs` state feeds the strip's tests pill. | Fork of hellosverre/redgreen at v0.1.0, MIT; see its `PROVENANCE.md`. |
 | `smart-compact/` | Offers to compact at a good moment: after a commit or a green test run, a minute before the prompt cache expires, or when Claude asks through its own `request_compact` tool; a small dialog (or a row above the prompt where no dialog fits) with Compact now and Not now, Esc for not now; `/compact-offer` shows the offer at any context fill. Here the cache lifetime defaults to 60 minutes, the conversation backup before a compact is off, and the offer's separators are middle dots. | Fork of hellosverre/smart-compact at v0.3.2, MIT; see its `PROVENANCE.md`. |
 | `breathe/` | A guided breathing exercise in the band once a turn has run 10 seconds: an animated shape that grows and shrinks with the breath, the phase line (`Breathe in... 4s`) and the exercise name (coherent, physiological sigh, box, 4-7-8), drawn by a Client module, terminal only, gone when Claude answers; each turn picks pulse, wave or melody at random, all seventeen styles selectable by name; `/breathe on \| off \| hrv \| sigh \| box \| 478 \| style <name> \| delay <s> \| spinner on\|off`. Here the delay is 10 s, the spinner word is left alone, and a subagent's turn does not restart the delay. | Fork of linxuan-sys/claude-breathe at d8cc7b9, MIT; see its `PROVENANCE.md`. |
+| `strip/` | One strip of quiet pills in place of the SYS, PLAN, HANDOFF and CACHE rows: context (a 10-cell bar and the fill against the auto-compact window: green, yellow from 30, peach from 60, solid red from 80), cache minutes, the turn's edits, the last test run, running subagents, queued prompts, system (only when hot) and peers, plus a solid red `STOP` while a held motion runs (it reads the motion-hold mod, which is not in this repo yet) and a health pill (`login expired`, `limit reached`, `turn failed`) only while something is wrong. It owns no data of the other mods: each pill reads their `$.state` and a press runs the owner's command or opens one of three panes (context with the `/context` categories and token-weather's totals, system, the last turn's diff from the tools' own patches). It orders the whole band through one `AbovePromptList` hook, fits four levels of width, shows a working glyph from a Client module five seconds into a turn, and opens other mods' panes without a background fill. `/strip sources \| context \| system \| diff [prev \| next \| <n>] \| open <pill> \| rows [show \| hide] \| panes [clear \| solid]`. | Ours (Zehui Lin, MIT), written 2026-11-16 with Claude. See its `PROVENANCE.md`. |
 
-## Band stack order
+## Band order
 
-Every band row of these mods is a Box keyed `zm-<order>-<name>`; each band hook
-returns `stackRow(row, await next(e))`, so the rows stack top to bottom as
-SYS 10, PLAN 20, HANDOFF 30, CACHE 40, AGENTS 50, GOAL 60, HERE 70, NEXT 80, IMAGES 90, whatever order the plugins load in, and other plugins' bands
-follow. The canonical helper is
-`~/.claude/skills/building-claude-code-mods/references/stack-row.tsx`, copied
-into each mod's `hooks/kit.ts` (token-weather: a JavaScript port, local change 11).
+Since Claude Code 2.1.325 each band row is asked for on its own, so a row can
+no longer place itself among the others. Every band row here is a Box keyed
+`zm-<order>-<name>`, drawn by its own mod, and one mod orders the whole band:
+the `strip` mod's single `AbovePromptList` hook (`strip/hooks/order.ts`). Top
+to bottom: the motion-hold mod's row (only while a held command runs; that
+mod is not in this repo yet), breathe, the strip, smart-compact's offer,
+AGENTS, GOAL, HERE, QUEUE, NEXT, IMAGES; a row of any other plugin follows,
+in the order received. While the strip draws,
+the SYS, PLAN, HANDOFF and CACHE rows are left out, since its pills stand in
+for them; the HANDOFF row stays while it has something to act on (the
+threshold is crossed, a save runs, or a resume is on offer).
+`/strip rows show` brings the four back under the strip and `/strip rows
+hide` removes them again. Without the strip mod, the rows stand in the
+plugins' load order.
+
+A new band row: give it a key of that form, return it alone from the mod's
+own `AbovePrompt` hook (or `next(e)` for none), and add the plugin's name to
+the order table.
 
 ## Adding a mod
 
