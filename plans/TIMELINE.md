@@ -31,3 +31,4 @@
 - 2026-11-16 04:01 | skins 0.5.16-zm.1 | shipped | fork of hellosverre/claude-skins v0.5.16 (MIT): default skin terminal, usage band off, no update check, star notice or dark-mode probe, Compact button without a digit hotkey; 256 tests; installed
 - 2026-11-16 04:02 | redgreen 0.1.0-zm.1 | shipped | fork of hellosverre/redgreen v0.1.0 (MIT): the Tests pane, unchanged but for the version; 19 tests; installed
 - 2026-11-16 04:02 | smart-compact 0.3.2-zm.1 | shipped | fork of hellosverre/smart-compact v0.3.2 (MIT): /compact-offer, backup off by default, 60-minute cache lifetime, middle-dot separators; 31 tests; installed
+- 2026-11-16 04:04 | breathe 2.0.0-zm.1 | shipped | fork of linxuan-sys/claude-breathe d8cc7b9 (MIT): random pool pulse, wave, melody; 10 s delay; spinner word off; main loop only; tests on the engine's kit; 49 tests; installed

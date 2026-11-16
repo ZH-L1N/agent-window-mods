@@ -256,6 +256,22 @@
         "compact",
         "context"
       ]
+    },
+    {
+      "name": "breathe",
+      "source": "./breathe",
+      "description": "A guided breathing exercise above the prompt once a turn has run 10 seconds (coherent, physiological sigh, box, 4-7-8), drawn by a Client module and gone when Claude answers; each turn picks pulse, wave or melody at random. /breathe on | off | hrv | sigh | box | 478 | style <name> | delay <s> | spinner on|off. Fork of linxuan-sys/claude-breathe at d8cc7b9.",
+      "author": {
+        "name": "Linxuan"
+      },
+      "repository": "https://github.com/linxuan-sys/claude-breathe",
+      "license": "MIT",
+      "category": "productivity",
+      "tags": [
+        "mod",
+        "breathing",
+        "focus"
+      ]
     }
   ]
 }
