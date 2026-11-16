@@ -1,0 +1,6 @@
+{
+  "hosts": ["rig-1.local", "10.0.0.*"],
+  "hold": ["\\bctl\\s+(move|jog|home|drive)\\b", "\\bbench/[\\w-]+\\.sh\\b"],
+  "stop": ["\\bctl\\s+stop\\b"],
+  "stopCommand": ["ssh", "{host}", "ctl stop all"]
+}

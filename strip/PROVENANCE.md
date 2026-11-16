@@ -24,9 +24,9 @@ code is copied, and no outside mod's source was opened to write it.
   `structuredPatch`, else the whole file before and after), so the headers
   carry the file's true line numbers.
 - The state it reads belongs to the owner's other mods in this repo
-  (token-weather, handoff, cache-clock, agents, sys, peers, queue, and
-  motion-hold, which is not in this repo yet) and to the redgreen fork; only
-  the fields read are typed, in `types/peer.d.ts`.
+  (token-weather, handoff, cache-clock, agents, sys, peers, queue,
+  motion-hold) and to the redgreen fork; only the fields read are typed, in
+  `types/peer.d.ts`.
 - The command with store-backed switches, the framed pane buttons with
   command twins and the README and test-kit shape follow the owner's sys,
   handoff, peers and here mods.

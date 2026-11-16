@@ -317,6 +317,21 @@
         "files",
         "pane"
       ]
+    },
+    {
+      "name": "motion-hold",
+      "source": "./motion-hold",
+      "description": "Holds any shell command (a Bash call or a Monitor watch) that would move, energise or restart lab hardware until you approve that one call: a card with Cancel and Run once, fail closed on any doubt, a MOTION row with STOP while an approved call runs. Built-in rules for register writes, motor APIs, GPIO, serial writes and flashing anywhere, and for services, power, kills and web writes on the hosts a local config names; site commands come from that config, outside the repo. /motion status | recent | test <command> | run | cancel | stop | clear | reload.",
+      "author": {
+        "name": "Zehui Lin"
+      },
+      "license": "MIT",
+      "category": "productivity",
+      "tags": [
+        "mod",
+        "safety",
+        "guard"
+      ]
     }
   ]
 }

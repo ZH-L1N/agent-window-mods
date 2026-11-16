@@ -31,10 +31,6 @@ mod is not loaded, is broken or is reloading leaves the pill dim.
 | peers | other panes of the workspace; `4 · 1 waiting` in peach while one is blocked | `peers.seen` | runs `/peer-alarm board` |
 | health | `login expired`, `limit reached` or `turn failed`, solid red, only while something is wrong | the strip's own record | toasts the detail |
 
-The stop pill belongs to the motion-hold mod, which is not in this repo yet
-(see `ROADMAP.md`). Until that mod is installed the pill never shows, and
-`/strip sources` reports its value as none.
-
 A reading taken before the last `/clear` is skipped, so the context pill never
 shows the old conversation's fill.
 

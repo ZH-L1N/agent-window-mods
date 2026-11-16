@@ -1283,6 +1283,194 @@ error handler rethrows raised no internal error; the slowest command took
 
 Case 25 is now written as the table gives it: 25. 20,007 characters of whole `echo ok; ` commands then ssh rig-1.local 'ctl home' -> hold, site, host rig-1.local, certain.
 
+#### Task 5, third correction 2026-11-16 (one more fix round, approved by the owner)
+
+After the two fix rounds this plan allows, the last check of the matcher
+still confirmed twelve findings in nine groups, one of them high, and
+phases 2 and 4 were held back (see "Held back and deferred"). The owner
+then approved one more, narrow fix round with a stop rule: make every
+limit of the matcher end in a hold instead of a pass, fix the subshell
+reading and the four smaller defects, run one check of that round against
+the three earlier versions of the matcher, and ship unless that check
+confirms a high finding; whatever else it finds is documented as a limit.
+The round fixed all nine groups. The rules below are what the matcher now
+does; where one differs from a rule above, this one stands. Cases 260 to
+322 pin them.
+
+- Built-in table: after signal 0 the search for a later word that starts with `-` does not end at the `|` of a `>|` redirect, nor at a `;`, `&`, `|` or newline that stands behind a backslash or inside a quote opened at the start of a word or behind `=`; the `docker compose` verb is found however far along its command it stands.
+- Rule 1: a `(` behind `time` (and its `-p`), right behind the empty `()` of a function's name and behind the `)` of a case pattern opens a group, and one that is never closed marks the parse uncertain; a `${` followed by a blank, a newline or `|` (`${ command; }`, `${| command; }`) is a substitution whose text is a command, in a word, in double quotes and in a heredoc body the shell expands; a `<( )` or `>( )` inside the braces of a `${...}` is a substitution of the segment, outside double quotes and inside them.
+- Rule 2: `time` is a word behind which a group, an assignment or a `case` may stand.
+- Rule 2a: every literal value of at most 2,000 characters is carried, and it is a weak one when its assignment has one of the weak forms, when its name stands anywhere else in the text as a bare word (a second assignment, a loop variable, `read NAME`, a word that merely equals it) or glued to a dash, when some declaring word names it without a value (`local NAME`, `export NAME`, after `-g -r -x` too; such a bare name is not counted as a use), or when the value was put together from a weak one; the room for values is 20,000 characters for every use and, beside it, 20,000 for the words of the commands and 20,000 for the second copies of texts the shell reads again, and a value is put in place while it fits in the first or in the room of its own kind.
+- Rule 3a: a weak value never takes a hold away: a remote-shell target known only through one stays an unresolved target (the host is the one the command names), and an executable in remote text that is one stays input that cannot be read.
+- Rule 7 (the limits rule, new wording): wherever the reader stops short of reading everything for a reason of its own (a command over 400,000 characters; a text more than eight texts deep; 1,200,000 characters of reading in one call; more than 64 distinct texts read a second time; quoted nesting past 200 counted levels inside one word; the room for carried values spent; a literal value over 2,000 characters; the steps of the closing readers spent, 16 for each character scanned and 100,000 for the call; a `${...}` in double quotes that two shells close at different braces), the whole raw command is decided like a text that cannot be taken apart: every class is tried on the raw text, a serial device or GPIO path it names holds as `serial-write` or `gpio-set`, and a command that names a configured host, in its raw text or through a value a stage was read with, is held as `unreadable`; the verdict is uncertain and the reasons already found are kept; an internal error is decided the same way.
+- Two readings: the 64 second readings are 64 distinct texts, and a nested text that is read again inside each reading of the text around it counts once.
+
+Choices made in this round, stated once:
+
+- **One rule for every limit, acted on in one place.** Wherever the reader
+  stops short for a reason of its own, it sets one flag for the call, and
+  `classify` then decides the whole raw command like a text that cannot be
+  taken apart. So a limit can no longer drop a reading quietly, and a limit
+  added later cannot forget the rule. The price: a harmless command that
+  reaches a limit and names a configured host is held. None of the 63,895
+  distinct shell commands in this machine's own session history reaches
+  any of the limits.
+- **A limit also holds a device path.** Under a limit, a raw command that
+  names a serial device or a GPIO path is held for that kind, because a
+  write through a command's own arguments or through a carried redirect
+  target shows no pattern.
+- **A limit with no configured host named decides by the raw text alone.**
+  A command that reaches a limit, names no configured host and shows
+  neither a pattern nor a device path passes. One consequence is known and
+  left: a site command put together from a carried value
+  (`M=move; ctl $M x 1`) on a line behind a quoted nest more than 100 deep,
+  or once the room for carried values is spent, passes; the version before
+  the second fix round held the nest form. Reading on past a nest the
+  reader does not follow, or putting values in place in raw text, would be
+  a new way of reading, which this round was not to add. A command put
+  together at run time (`ctl $(echo move) x 1`) passes by the same limit of
+  the design, with no limit reached.
+- **The subshell reading gives back what the second round held by
+  misreading.** A `(` behind `time`, behind a function's `()` and behind a
+  later case pattern now opens a group, so the reads there pass again and
+  the held commands there are found by the first reading. A few commands
+  that are not reads pass with them: those the second round held only
+  because it tried the whole subshell as raw text, and that every version
+  passes when the subshell is written as a brace group
+  (`time (sudo reboot; ping -c1 rig-1.local)`: the reboot is local). An
+  unclosed `(` in these places stays an uncertain parse.
+- **A weak value never takes a hold away.** A remote-shell target known
+  only through a weak value stays an unresolved target, and a value put
+  together from a weak one is weak.
+- **A value the one-use guard declines is carried as a weak one**, not
+  dropped: `dev=/dev/ttyUSB0; echo G1 X10 > "$dev"` is held. The price: a
+  stale value can add a hold (`f=/dev/ttyUSB0`, later `for f in *.txt` with
+  a write to `"$f"`). Nothing that was not a certain value became one.
+- **A process substitution inside the braces of a reference is read in
+  double quotes too**, although bash does not run it there.
+- **The 64 second readings are 64 distinct texts.** A nested text read
+  again inside each reading of the text around it counts once.
+- **Time is bounded by steps.** The closing readers count their steps (16
+  for each character scanned and 100,000 for the call), and three searches
+  that were repeated at every level are asked once. The slowest input
+  found takes about a quarter of a second.
+- **One earlier assertion changed.** In the speed test, `H=rig-1.local; `
+  and 15,000 times `ssh $H uptime; ` is now held: its values no longer fit
+  the room for them, which is a limit, and the command names a configured
+  host. Its time bound is unchanged.
+
+The proof of this round: its matcher and the three earlier ones were run
+side by side over 6,933,045 distinct generated commands (the earlier
+reviewers' generators and three new ones: harmless padding around every
+kind of held command, a command for every limit, and every weak form of
+assignment). Of the commands the second round held, 2,775 pass now, all
+in the subshell class above; of those the first fix round held, 1,514,
+all reads behind a one-dash long option of a shell; every command the
+first version held and this one passes was already passed after the first
+fix round, or is one of those 1,514. No internal error; the slowest classification took 233 ms. Over
+the 4,421 shell commands the local config was drawn from, this round and
+the second give the same verdict for every command.
+
+The check of this round (three lenses over the round's changes only, the
+four versions of the matcher run side by side, each finding checked by a
+skeptic) confirmed nine findings in six groups and no high one. Medium: an
+assignment that opens a group behind `time -p` is not read as one, so
+`time -p (M=move; ctl $M x 1)` passes where the second round held it; the
+new step budget runs out at 14 levels of a single quote inside nested
+`${...}`, where the second round still read the text, and a hold put
+together from a carried value behind it passes; the values newly carried
+as weak spend the room for carried values, with the same effect after
+20,000 characters of their uses; and the limit without a configured host
+named above, which one skeptic confirmed and another set aside as the
+rule this round was given. Low: more spellings that hide a later signal
+option after signal 0, a `${ command; }` nested in another `${...}`, and
+shapes of very long commands that take quadratic time (the call is then
+refused, not passed). None is fixed in this version: under the stop rule
+the matcher ships as it was checked. They are listed in the mod's README
+under "Found by the last review and not fixed yet" and marked in "Held
+back and deferred". The check also listed ten gaps that every version
+shares, among them a carried value used through `${NAME%/}`, a name given
+two literal values, input fed to a remote shell behind `sshpass` and
+other wrappers, and a host name with a loop variable in it; they are in
+the README under "What it cannot see".
+
+What stays open is listed in the mod's README under "What it cannot see":
+the limit without a configured host above; input given to a group over
+several lines or handed on by a process substitution
+(`echo hi | tee >(ssh rig-1.local bash)`); an assignment on a line of its
+own inside a compound command or `( )`, which counts as a plain one; and
+`time { (read) }`, which stays held.
+
+Recipes: ARITH(n) = n assignments `x<i>=$(( (a+<i>)*2 ))`, i from 0, joined by `; `. QNEST(k) = `x` wrapped k times in `echo "$(` ... `)"`. BNEST(k) = `x` wrapped k times in `"${a:-` ... `}"`. DEFAULTS(k) = `echo "${a:-${b}}"` wrapped k times in `echo "${a:-${b}}" $(` ... `)`. QUOTED(k) = `x` wrapped k times in `"${a:-''` ... `}"`. LONGY = `Y=` and 1,999 times `y`.
+
+```text
+260. 70 lines `n<i>=$(ls /tmp/f<i>*(N) | wc -l)` / f() ( case $1 in a) ssh rig-1.local bash < run.sh;; esac ) -> hold, unreadable, host rig-1.local, isCertain false
+261. ARITH(64); time (ssh rig-1.local bash) < run.sh -> hold, unreadable, host rig-1.local, certain
+262. time (ssh rig-1.local bash) < run.sh; DEFAULTS(7) -> hold, unreadable, host rig-1.local, certain
+263. f() (ssh rig-1.local bash) < run.sh; f; DEFAULTS(7) -> hold, unreadable, host rig-1.local, certain
+264. time (ssh rig-1.local bash) <<< "$CMD"; DEFAULTS(7) -> hold, unreadable, host rig-1.local, certain
+265. ARITH(70); ssh rig-1.local $'echo a \ / bash' < run.sh -> hold, unreadable, host rig-1.local, isCertain false
+266. ARITH(70); CMD='grep -c done log'; ssh rig-1.local "$CMD" -> hold, unreadable, host rig-1.local, isCertain false
+267. ARITH(70); ls -la -> pass
+268. B=http://rig-1.local:8080/<1,900 times v>; X=$(echo <ten times "$B">); curl -X POST "$B" -d 1 -> hold, http-write, host rig-1.local, certain
+269. B=http://rig-1.local:8080; X=$(printf '%s\n' <900 times "$B">); curl -X POST "$B/api/move" -d 1 -> hold, http-write, host rig-1.local, isCertain false
+270. LONGY; echo $(echo $Y 0) ... $(echo $Y 9); DEV=/dev/ttyUSB0; echo G1 X10 > "$DEV" -> hold, serial-write, host null, certain
+271. LONGY; echo $(echo $Y 0) ... $(echo $Y 9); SSH="ssh rig-1.local"; $SSH bash < run.sh -> hold, unreadable, host rig-1.local, certain
+272. LONGY; eval 'echo $Y 0'; ... eval 'echo $Y 9'; BASE=http://rig-1.local:8080; curl -s -X POST "$BASE/api/move" -d 1 -> hold, http-write, host rig-1.local, certain
+273. LONGY; trap 'echo $Y 0' EXIT; ... trap 'echo $Y 9' EXIT; SSH="ssh rig-1.local"; $SSH 'sudo reboot' -> hold, power, host rig-1.local, certain
+274. B=http://rig-1.local:8080; echo <1,000 times "$B">; curl -X POST "$B/api/move" -d 1 -> hold, http-write, host rig-1.local, isCertain false
+275. QNEST(101) / ssh rig-1.local bash < run.sh -> hold, unreadable, host rig-1.local, isCertain false
+276. QNEST(105); ssh rig-1.local "$CMD" -> hold, unreadable, host rig-1.local, isCertain false
+277. QNEST(107); cat run.sh | ssh rig-1.local bash -> hold, unreadable, host rig-1.local, isCertain false
+278. echo BNEST(102); ssh rig-1.local bash < run.sh -> hold, unreadable, host rig-1.local, isCertain false
+279. QNEST(101) / ls -> pass
+280. time (ssh rig-1.local 'grep -c shutdown log') -> pass, read-only
+281. time (ssh rig-1.local 'cat /var/log/reboot.log' | wc -l) -> pass, read-only
+282. ssh rig-1.local 'time (grep -c shutdown /var/log/syslog)' -> pass, read-only
+283. f() (ssh rig-1.local 'grep -c shutdown log'); f -> pass
+284. case "$1" in a) echo a ;; b) (ssh rig-1.local 'grep -c shutdown log') ;; esac -> pass
+285. time (ssh rig-1.local bash) < run.sh -> hold, unreadable, host rig-1.local
+286. f() (ssh rig-1.local bash) < run.sh; f -> hold, unreadable, host rig-1.local
+287. case $1 in a) echo hi ;; b) (ssh rig-1.local bash) < run.sh ;; esac -> hold, unreadable, host rig-1.local
+288. f() ( case $1 in a) ssh rig-1.local bash < run.sh;; esac ) -> hold, unreadable, host rig-1.local
+289. ssh rig-1.local '{ time (bash -s) }' < run.sh -> hold, unreadable, host rig-1.local
+290. ssh rig-1.local 'for i in 1; do time (bash -s) done' < run.sh -> hold, unreadable, host rig-1.local
+291. time -p (ssh rig-1.local 'grep -c shutdown log') -> pass, read-only
+292. ls (a|b)* -> pass
+293. if [ -n "$S" ]; then H=other.example; fi; ssh $H bash < run.sh; ping -c 1 rig-1.local -> hold, unreadable, host rig-1.local, isCertain false
+294. f() { local H=other.example; }; ssh $H bash < run.sh; ping -c 1 rig-1.local -> hold, unreadable, host rig-1.local, isCertain false
+295. case x in a) H=other.example ;; esac; ssh "$H" "$CMD"; ping -c 1 rig-1.local -> hold, unreadable, host rig-1.local, isCertain false
+296. while false; do H=other.example; done; cat run.sh | ssh ${H} bash; ping -c 1 rig-1.local -> hold, unreadable, host rig-1.local, isCertain false
+297. curl -H 'X: 1' http://x.example; H=other.example; ssh $H bash < run.sh; ping -c 1 rig-1.local -> hold, unreadable, host rig-1.local, isCertain false
+298. if [ "$MODE" = spare ]; then H=spare.example; fi; : "${H:=rig-1.local}"; ssh $H bash < run.sh -> hold, unreadable, host rig-1.local, isCertain false
+299. H=other.example; ssh $H bash < run.sh; ping -c 1 rig-1.local -> pass
+300. f() { /   local url /   url=http://rig-1.local:8080/api/move /   curl -X POST "$url" -d 1 / } / f -> hold, http-write, host rig-1.local
+301. local B; B=http://rig-1.local:8080; curl -X POST "$B/api/move" -d 1 -> hold, http-write, host rig-1.local
+302. export B; B=http://rig-1.local:8080; curl -X POST "$B/api/move" -d 1 -> hold, http-write, host rig-1.local
+303. B=http://rig-1.local:8080; export B; curl -X POST "$B/api/move" -d 1 -> hold, http-write, host rig-1.local
+304. local H; H=other.example; ssh $H bash < run.sh; ping -c 1 rig-1.local -> hold, unreadable, host rig-1.local, isCertain false
+305. ssh rig-1.local 'kill -0 >| /tmp/out -s KILL 2186' -> hold, kill, host rig-1.local
+306. ssh rig-1.local "kill -0 2186 2>| /dev/null -s KILL" -> hold, kill, host rig-1.local
+307. ssh rig-1.local 'pkill -0 -f bench >| /dev/null --signal 9' -> hold, kill, host rig-1.local
+308. ssh rig-1.local 'pkill -0 "bench|runner" --signal 9' -> hold, kill, host rig-1.local
+309. ssh rig-1.local 'kill -0 2186 >| /dev/null' -> pass, no-match
+310. cat ${A:-<(ssh rig-1.local 'ctl move x 1')} -> hold, site, host rig-1.local
+311. ssh rig-1.local 'cat ${F:-<(sudo reboot)}' -> hold, power, host rig-1.local
+312. bash -c 'cat ${F:-<(ssh rig-1.local bash < run.sh)}' -> hold, unreadable, host rig-1.local
+313. ssh rig-1.local 'echo "${ sudo reboot; }"' -> hold, power, host rig-1.local
+314. ssh rig-1.local 'echo ${| sudo reboot; }' -> hold, power, host rig-1.local
+315. cat ${F:-/dev/null} -> pass, read-only
+316. B=http://rig-1.local:8080/<2,001 times v>; curl -X POST "$B" -d 1 -> hold, unreadable, host rig-1.local, isCertain false
+317. echo QUOTED(40); ssh rig-1.local 'grep -c done log' -> hold, unreadable, host rig-1.local, isCertain false
+318. ssh rig-1.local 'docker compose --project-directory /srv/<300 times a> up -d' -> hold, service, host rig-1.local
+319. URL=http://rig-1.local:8080/api/move; curl -X POST "$URL" -d 1; echo URL done -> hold, http-write, host rig-1.local
+320. dev=/dev/ttyUSB0; echo G1 X10 > "$dev" -> hold, serial-write, host null
+321. { A=other.example; }; H=$A; ssh $H bash < run.sh; ping -c 1 rig-1.local -> hold, unreadable, host rig-1.local, isCertain false
+322. H=other.example; echo H; ssh $H bash < run.sh; ping -c 1 rig-1.local -> hold, unreadable, host rig-1.local, isCertain false
+```
+
+Cases 261 to 264 are certain because the hold is now found by the first reading and the budget of second readings is not spent.
+
 ### Task 6: the hold kit (`motion-hold/hooks/hold.ts`)
 
 One hold at a time, a pane when it can be placed, the engine's question

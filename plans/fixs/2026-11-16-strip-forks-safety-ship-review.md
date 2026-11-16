@@ -25,6 +25,20 @@ Left open in phase 2, all in `motion-hold/hooks/match.ts` (uncommitted), each co
 8. low: a signal option behind a `>|` redirect is not seen after `kill -0`.
 9. low: `<( )` or `>( )` inside an unquoted `${...}`, and `${ command; }`, are not read as substitutions.
 
+ship-review note [phase 2 motion-hold]: on 2026-11-16 the owner approved a third, narrow fix round with a stop rule: every limit of the matcher ends in a hold, the subshell reading and the four smaller defects are fixed, one check against the three earlier versions follows, and the mod ships unless that check confirms a high finding
+ship-review round 3 [phase 2 motion-hold]: 12 carried over / 12 fixed / 0 left by the fix round's own proof (6,933,045 generated commands through four versions of the matcher; 63 new table rows; 414 tests); one residue declared by the fix agent
+ship-review check [phase 2 motion-hold, round 3]: 9 confirmed / 0 fixed / 9 left, per lens: regression 6, fixes 2, correctness 1 (no high, 4 medium, 5 low; 3 more raised and set aside by their skeptics; 10 gaps that every version shares listed)
+review-loop [phase 2 motion-hold]: budget-spent (3 rounds, the third approved by the owner; 9 non-HIGH deferred and documented in the mod's README) @ fb513e1850fbfe77b619f5c6fef674b4701ca3e4 0ab9549d0f2e39b8592667ce0077bb63df966e88
+
+Left open after the third round, all in `motion-hold/hooks/match.ts`, each confirmed by a skeptic (nine findings, six groups):
+
+1. medium (two lenses): an assignment that opens a group behind `time -p` is not read as one, so `time -p (M=move; ctl $M x 1)` passes where the second round held it.
+2. medium: the new step budget runs out at 14 levels of a single quote inside nested `${...}`; a hold put together from a carried value behind it passes, where the second round held it.
+3. medium: values newly carried as weak spend the room for carried values; after 20,000 characters of their uses a later value is left out and a hold put together from it passes.
+4. medium (one skeptic confirmed it, another set it aside as the rule the round was given): under a limit with no configured host named, a hold put together from a carried value passes; the first fix round held the nest form.
+5. low (two lenses): after signal 0, a later signal option is not seen behind a separator inside `$'...'`, a quote opened in the middle of a word or `${...}`, nor behind `&>|`.
+6. low: `${ command; }` nested in another unquoted `${...}` is not read; and low: five shapes of very long commands take quadratic time, up to 29 seconds under the length limit (the call is then refused, not passed).
+
 ship-review round 1 [phase 3 strip]: 13 confirmed / 13 fixed / 0 left, per lens for the strip: coverage 3, simplification 3, conformance 2, correctness 1; token-weather and here: 4
 ship-review round 2 [phase 3 strip]: 2 confirmed / 2 fixed / 0 left, per lens: correctness 2 (re-review of the fix round; both low)
 ship-review check [phase 3 strip]: 1 confirmed / 1 fixed / 0 left (spot check of the round 2 edits; low, fixed by the orchestrator, gate re-run green)
@@ -34,6 +48,7 @@ ship-review round 1 [phase 4 send-gate]: 7 confirmed / 7 fixed / 0 left, per len
 ship-review round 2 [phase 4 send-gate]: 11 confirmed / 11 fixed / 0 left, per lens: bypass 5, correctness 3, security 3 (re-review of fix round 1)
 ship-review check [phase 4 send-gate]: 1 confirmed / 0 fixed / 1 left (spot check of fix round 2; low)
 review-loop [phase 4 send-gate]: budget-spent (2 rounds, 1 non-HIGH deferred); not committed, it waits for phase 2, where its hold kit and the kit's tests live @ f2df7d8a47daf9ba4faed5db8da1959326733ab6 6fbbee17de607baf6b7c2bd8905d6e3eaf782abd
+ship-review note [phase 4 send-gate]: committed with phase 2 on 2026-11-16, unchanged since its check; gate re-run green (106 tests) @ fb513e1850fbfe77b619f5c6fef674b4701ca3e4 0ab9549d0f2e39b8592667ce0077bb63df966e88
 
 ship-review round 1 [phase 5 queue]: 9 confirmed / 9 fixed / 0 left, per lens: coverage 3, security 2, conformance 2, correctness 1, simplification 1
 ship-review round 2 [phase 5 queue]: 2 confirmed / 2 fixed / 0 left, per lens: correctness 2 (re-review of fix round 1; both low)
