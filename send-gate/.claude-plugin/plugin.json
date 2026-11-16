@@ -1,0 +1,24 @@
+{
+  "name": "send-gate",
+  "version": "0.1.0",
+  "description": "In a session that runs without permission prompts, holds an MCP tool call that would send a message or an email, notify people (an invitation, a share, a comment) or that a local config names (an app environment change, for example), and shows the target, the mentions and the dates until you let that one call through (a card in a pane, or the question dialog on a narrow terminal; refused when nobody answers). /send-gate shows the mode and the config, tests a tool name, lists tools that are neither gated nor a read, and answers a hold.",
+  "author": {
+    "name": "Zehui Lin"
+  },
+  "license": "MIT",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "timeoutSeconds": {
+      "type": "number",
+      "title": "Seconds before an unanswered hold is refused",
+      "description": "How long a held call waits for Send once or Cancel before it is refused (5 to 3600; default 120).",
+      "default": 120
+    },
+    "config": {
+      "type": "string",
+      "title": "Site config file",
+      "description": "Absolute path of the JSON file with the tool names to gate and to pass. Empty (default): <HOME>/.claude/send-gate.json.",
+      "default": ""
+    }
+  }
+}

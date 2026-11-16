@@ -332,6 +332,21 @@
         "safety",
         "guard"
       ]
+    },
+    {
+      "name": "send-gate",
+      "source": "./send-gate",
+      "description": "In a session that runs without permission prompts, holds a tool call that would send a message or an email, notify people (an invitation, a share, a comment) or that a local config names, and shows the target, the mentions, the dates and the text before you let that one call through: Cancel or Send once, fail closed on any doubt. /send-gate status | recent | test <tool> | tools | send | cancel | reload.",
+      "author": {
+        "name": "Zehui Lin"
+      },
+      "license": "MIT",
+      "category": "productivity",
+      "tags": [
+        "mod",
+        "safety",
+        "guard"
+      ]
     }
   ]
 }
