@@ -2947,6 +2947,33 @@ edit the file is under `Touched this turn` and carries `M`.
 - **The agents pane's messages view** and **the cross-pane approval
   alarm** are not part of this plan.
 
+## Held back and deferred
+
+- TEMP(2026-11-16, until: a third fix round for the matcher is approved and
+  its check passes): phase 2 (motion-hold) and phase 4 (send-gate) are built
+  and tested but not committed. After the two fix rounds this plan allows,
+  the last check of the matcher still confirmed one high finding and eleven
+  smaller ones, all in `motion-hold/hooks/match.ts`; the gate, the card and
+  the hold kit are clean. The failure rule above therefore keeps phase 2
+  out, and phase 4 with it, since send-gate's `hooks/hold.ts` is a copy of
+  the kit whose home and tests are in motion-hold. Both folders stay in the
+  working tree, untracked. The findings are listed in
+  `plans/fixs/2026-11-16-strip-forks-safety-ship-review.md`. Until the two
+  mods land, `strip/README.md`, `strip/PROVENANCE.md` and the band order
+  section of `README.md` say that motion-hold is "not in this repo yet";
+  those notes go when it lands.
+- TEMP(2026-11-16, until: queue 0.1.1): two low findings of the queue's last
+  check stay open. A `/q clear`, or any other act that empties the queue,
+  that lands while the automatic take's state write is in flight brings the
+  taken item back. A put-back whose state write fails loses the item
+  without a toast. Both need a window of a few milliseconds or a state
+  write that fails.
+- TEMP(2026-11-16, until: send-gate lands): one low finding of send-gate's
+  last check stays open. When a write of the permission mode to the session
+  state fails outright and the mod is reloaded before the next mode event,
+  the launcher's variable or the settings can put a mode that is not gated
+  back over a bypass mode an event had named, until the next event.
+
 ## Phase ledger
 
 Filled in as phases land.

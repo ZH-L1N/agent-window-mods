@@ -29,3 +29,13 @@ ship-review round 1 [phase 3 strip]: 13 confirmed / 13 fixed / 0 left, per lens 
 ship-review round 2 [phase 3 strip]: 2 confirmed / 2 fixed / 0 left, per lens: correctness 2 (re-review of the fix round; both low)
 ship-review check [phase 3 strip]: 1 confirmed / 1 fixed / 0 left (spot check of the round 2 edits; low, fixed by the orchestrator, gate re-run green)
 review-loop [phase 3 strip]: budget-spent (2 rounds, 0 non-HIGH deferred) @ 8c1f29fd7e6a354d0f5e386059046b0e14ed1c99 9df9187d71291110d9d6fa5091cb9e42a8226bc5
+
+ship-review round 1 [phase 4 send-gate]: 7 confirmed / 7 fixed / 0 left, per lens: correctness 2, security 2, coverage 1, conformance 1, bypass 1
+ship-review round 2 [phase 4 send-gate]: 11 confirmed / 11 fixed / 0 left, per lens: bypass 5, correctness 3, security 3 (re-review of fix round 1)
+ship-review check [phase 4 send-gate]: 1 confirmed / 0 fixed / 1 left (spot check of fix round 2; low)
+review-loop [phase 4 send-gate]: budget-spent (2 rounds, 1 non-HIGH deferred); not committed, it waits for phase 2, where its hold kit and the kit's tests live @ f2df7d8a47daf9ba4faed5db8da1959326733ab6 6fbbee17de607baf6b7c2bd8905d6e3eaf782abd
+
+ship-review round 1 [phase 5 queue]: 9 confirmed / 9 fixed / 0 left, per lens: coverage 3, security 2, conformance 2, correctness 1, simplification 1
+ship-review round 2 [phase 5 queue]: 2 confirmed / 2 fixed / 0 left, per lens: correctness 2 (re-review of fix round 1; both low)
+ship-review check [phase 5 queue]: 2 confirmed / 0 fixed / 2 left (spot check of fix round 2; both low)
+review-loop [phase 5 queue]: budget-spent (2 rounds, 2 non-HIGH deferred) @ f2df7d8a47daf9ba4faed5db8da1959326733ab6 6fbbee17de607baf6b7c2bd8905d6e3eaf782abd

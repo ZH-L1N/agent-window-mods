@@ -1,0 +1,10 @@
+{
+  "name": "queue",
+  "version": "0.1.0",
+  "description": "A prompt queue with no model call: /q <text> queues a prompt, and each time a main-loop turn ends normally the first item is submitted as the next prompt, never while a subagent runs. A QUEUE row above the prompt and a pane (/q pane) manage it; an interrupted or failed turn pauses the queue.",
+  "author": {
+    "name": "Zehui Lin"
+  },
+  "license": "MIT",
+  "types": "./types/index.d.ts"
+}

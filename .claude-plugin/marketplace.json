@@ -287,6 +287,21 @@
         "band",
         "status"
       ]
+    },
+    {
+      "name": "queue",
+      "source": "./queue",
+      "description": "A prompt queue with no model call: /q <text> queues a prompt, and each time a main-loop turn ends normally the first item is submitted as the next prompt, never while a subagent runs. A QUEUE row above the prompt and a pane (/q pane) manage it; an interrupted or failed turn pauses the queue. /q add | list | rm | up | clear | pause | resume | next | send <n> | pane.",
+      "author": {
+        "name": "Zehui Lin"
+      },
+      "license": "MIT",
+      "category": "productivity",
+      "tags": [
+        "mod",
+        "queue",
+        "prompts"
+      ]
     }
   ]
 }
