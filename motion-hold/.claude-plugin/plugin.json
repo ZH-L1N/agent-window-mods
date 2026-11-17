@@ -1,6 +1,6 @@
 {
   "name": "motion-hold",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Holds any Bash call, and any Monitor watch that runs a command, that would move, energise or restart lab hardware until you approve that one call (a card in a pane, or the question dialog on a narrow terminal; refused when nobody answers), and shows a STOP row while an approved call runs. Reads, logs and status pass; a stop command always passes. Generic rules are built in; the site's hosts and command patterns come from a local config file. /motion shows the state, tests a command and answers a hold.",
   "author": {
     "name": "Zehui Lin"

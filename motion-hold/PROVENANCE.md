@@ -37,11 +37,18 @@ second review of that round, the same day, confirmed twelve more findings,
 most of them commands the first version held and the reviewed one passed;
 its fixes are items 21 to 29. A third review confirmed twelve again, nine
 distinct ones, all of them in the matcher's own limits and in spellings next
-to the second round's fixes; its fixes are items 30 to 38. Where a later
+to the second round's fixes; its fixes are items 30 to 38. Version 0.1.1,
+the same day, closes what the check of those fixes left (item 39) and three
+gaps every earlier version shared; its changes are items 40 to 49, written
+to plan `plans/2026-11-16-motion-hold-0.1.1.md` (items A to J of that plan,
+in its order). Where a later
 item replaces what an earlier one says, the later item stands. Every case of
 the plan's table (1 to 73) still gives the verdict the table names; the
 first review's cases are rows 74 to 165 of `hooks/match.test.ts`, the second
-review's rows 166 to 259, the third review's rows 260 to 322.
+review's rows 166 to 259, the third review's rows 260 to 322, and version
+0.1.1's rows 323 on. Three of the third review's rows changed their verdict
+in 0.1.1 and say so: 267 and 279 (a limit with no configured host named,
+held since item 43) and 317 (a shape read in full since item 41).
 
 A departure is one of two kinds. **Holds more:** a command the plan's rules,
 read to the letter, pass is held. **Reads more exactly:** a command is read
@@ -362,7 +369,10 @@ so a later change to the plan's rules can be checked against them.
     reaches a limit and names a configured host is held even when it only
     reads, and one that names a serial device or a GPIO path is held for
     it. A command that reaches a limit, names no configured host and shows
-    no pattern passes, as before.
+    no pattern passed, as before, until version 0.1.1: since then every
+    limit holds the command, whatever it names, and a value over 2,000
+    characters is a limit only where its name stands again in the command
+    (item 43).
 31. **Second readings are counted by text** (third review, holds more). The
     64 second readings of item 21 are 64 distinct texts: a nested text that
     is read again inside each reading of the text around it counts once,
@@ -376,7 +386,9 @@ so a later change to the plan's rules can be checked against them.
     while it fits in the first or in the room of its own kind, so ten uses
     of a long value inside substitutions no longer leave the words of the
     next command unread; where nothing fits, the reader has stopped short
-    (item 30).
+    (item 30). Since version 0.1.1 the values that item 34 carries where
+    nothing was carried before have the same three rooms of their own
+    (item 42).
 33. **Steps** (third review). The readers that close a quote, a `( )` and a
     `${ }` count their steps, the characters they pass over in a search for
     a closing quote or backtick included: 16 for each character handed to
@@ -392,8 +404,10 @@ so a later change to the plan's rules can be checked against them.
     word of glued pairs (`x(N)(N)(N)...`) ends in `name=`. So a command of
     400,000 characters in any of these shapes is read in about a tenth of a
     second, where 130,000 glued pairs took over two seconds. Other shapes
-    still take quadratic time, and the step budget itself costs a hold
-    (item 39).
+    still took quadratic time, and the step budget itself cost a hold
+    (item 39); version 0.1.1 reads the quoted shape once (item 41), which
+    leaves the budget a last resort, and reads the other shapes in one pass
+    (item 46).
 34. **Weak values never take a hold away** (third review, holds more;
     extends item 25). Where a weak value names no configured host, a remote
     shell whose target it is stays an unresolved target for rule 3a (the
@@ -410,7 +424,8 @@ so a later change to the plan's rules can be checked against them.
     whose name stands nowhere else still makes a target certain. The price:
     a stale value can add a hold (`f=/dev/ttyUSB0`, later a loop
     `for f in *.txt` that writes to `"$f"`), and a value carried this way
-    takes room that the second review's version did not spend (item 39).
+    took room that the second review's version did not spend (item 39),
+    until version 0.1.1 gave such values a room of their own (item 42).
 35. **A subshell is a group** (third review, reads more exactly; corrects
     item 22). A `(` behind `time` (and its `-p`), right behind a function's
     `()` and behind the pattern of a case arm opens a group, where the
@@ -427,31 +442,35 @@ so a later change to the plan's rules can be checked against them.
     (`pkill -0 "a|b" --signal 9`). A quote counts as opened only where it
     starts a word or stands behind `=`: the text in hand may begin inside a
     quoted string of the command around it, whose closing quote opens
-    nothing.
+    nothing. (Version 0.1.1 adds a second search for a command that stands
+    outside every quote of its text: item 44.)
 37. **Substitutions in braces, and two caps removed** (third review, holds
     more). Inside the braces of a `${...}` a process substitution is read as
     one (`${A:-<(command)}`; bash runs it outside double quotes, and the
     same spelling inside them is held alike), and so is the command form
     `${ command; }` and `${| command; }` of bash 5.3, ksh and mksh, in a
-    word, in double quotes and in a heredoc body. The `docker compose` verb
+    word, in double quotes and in a heredoc body (inside another reference
+    outside double quotes only since version 0.1.1: item 45). The `docker compose` verb
     is found however far along its command it stands (a check that passes
     over the text once, like the ones of item 12). A variable's name may be
     of any length where a text is asked whether it is nothing but
     variables; past 79 characters it used to count as text.
 38. **What is left** (third review). Under a limit, a hold that the raw
-    text does not show is missed: a site command put together from a
+    text does not show was missed: a site command put together from a
     carried value, and a command on a configured host whose name is split
     between a value and its use, behind a quoted nest the reader cannot
     follow, once the room for values is spent, or once the steps are spent
-    (item 39). An assignment on a line of
+    (item 39). Version 0.1.1 holds every command that reaches a limit
+    (item 43), so this is closed. An assignment on a line of
     its own inside a compound command, or inside `( )`, counts as a plain
     one. Input given to a group over several lines, or handed on by a
     process substitution (`tee >(ssh host bash)`), is not followed. `time`
     behind another prefix (`sudo time (...)`) and zsh's `time { (...) }`
     stay held as before. All are listed in the README.
 39. **What the check of the third review's fixes left** (2026-11-16; no
-    high finding; to be fixed in the next version). All are listed in the
-    README under "Found by the last review and not fixed yet".
+    high finding). All six were listed in the README of version 0.1.0 under
+    "Found by the last review and not fixed yet" and are fixed in version
+    0.1.1, in the order below: items 40, 41, 42, 44, 45 and 46.
     - `time -p` and an assignment: `push` looks through `-p` behind `time`,
       and the look-through loop of `noteAssignments` does not, so
       `time -p (NAME=value; ...)` and `time -p { NAME=value; ...; }` carry
@@ -481,6 +500,242 @@ so a later change to the plan's rules can be checked against them.
       `lastBraceOf` compares two long equal texts at every `${`. The first
       is as old as the mod, the second and third came with the second
       review's fixes, the fourth with this round's.
+40. **`time -p` and an assignment** (version 0.1.1, holds more; plan item
+    A). The look-through of `noteAssignments` passes the `-p` of `time`,
+    as `push` does (and a `--` behind it), so `time -p (NAME=value; ...)`,
+    `time -p { NAME=value; ...; }` and the bare `time -p NAME=value; ...`
+    carry the value, as a weak one like every value behind `time`. The
+    version before 0.1.0 held the `( )` form by reading the subshell as a
+    text of its own; the brace and bare forms passed in every version.
+    What the check of this version found in this item is in item 50.
+41. **A closed brace is closed once** (version 0.1.1, reads more exactly;
+    plan item B). `closeBrace` keeps its answer for each text, start and
+    way of quoting. A single quote inside `${...}` nested in double quotes
+    has every level asked for twice by the level around it (the two
+    shells' readings of item 23), which doubled the work at every level:
+    the version before 0.1.0 took ten seconds at 27 levels, and 0.1.0 ran
+    out of the steps of item 33 at 14, where it held a command that names
+    a configured host and passed one that names none. The shape is now
+    read once, in time proportional to its length, up to the nesting limit
+    (100 levels). So a hold put together from a carried value behind it is
+    made again, and a read on a configured host behind it passes again
+    (rows 317 and 342). The notes are forgotten at the start and the end
+    of every scan, because a reader marks on the scan in hand what it
+    meets (a reading that parts from the earlier one, braces two shells
+    close differently), and an answer found while a limit was reached is
+    not kept. The step budget stays as a last resort: over the generated
+    commands of the round the readers took at most 2.9 steps for each
+    character read, against the 16 allowed.
+42. **A room of their own for the values carried since 0.1.0** (version
+    0.1.1, holds more; plan item C; corrects item 34). A value that item
+    34 carries as a weak one where the version before carried nothing (its
+    name stands elsewhere as a bare word or is declared without a value,
+    the assignment stands behind `time`, or the value was put together
+    from such a value) takes its room from three rooms of its own, never
+    from those of item 32. So every value the version before 0.1.0 put in
+    place still is, whatever these values spend: a 100-character value of
+    that kind used 200 times no longer leaves `M=move; ctl $M x 1` unread.
+    Reads more exactly as well: a read on a configured host beside values
+    of both kinds, each within its room, passes where 0.1.0 held it for
+    the one room they shared.
+43. **Every limit holds the command** (version 0.1.1, holds more; plan item
+    D; corrects items 30 and 38). Where the reader stopped short anywhere,
+    and where the matcher failed on a command, the command is held as
+    `unreadable` with `isCertain` false, whether or not it names a
+    configured host; the reason carries the host when the command names
+    one and no host otherwise (`unread`). Before, such a command passed
+    when it named no configured host and showed neither a pattern nor a
+    device path, which let a site command put together from a carried
+    value pass behind a quoted nest (the one hold of the version before
+    the second review that was still lost). The price is that a harmless
+    command that reaches a limit is held: the plan of 0.1.0 found that
+    none of the 63,895 distinct commands of the history its limits were
+    measured on reached one (not measured again for the two limits this
+    version adds or moves). So that this holds little that is harmless, a
+    literal value over 2,000 characters is a limit only where its name
+    stands again: where a use of it is read (in a word, a heredoc body, or
+    the second copy of a text the shell reads again, in any spelling
+    behind a `$`: `${NAME@Q}` and `${OTHER:-$NAME}` too), and wherever
+    else the name stands in the command or in a text read out of it, other
+    than as the name being assigned (`namesLong`: a bare name in
+    arithmetic, a function written before the assignment, the name as the
+    value of another name, `echo NAME`). The matcher does not work out
+    which of those the shell reads the value through, so each of them is
+    the limit, in whatever order the texts were read (rows 363 and 364).
+    Nowhere when the name stands nowhere else:
+    `X=<2,001 characters>; ls -la` passes, and so does a read on a
+    configured host beside such a value, which 0.1.0 held. Left: a name
+    the command works out where its text does not show it
+    (`eval "echo \$UR$(echo L)"`); a name put together from carried
+    pieces is seen, because the copy of the text with the values in place
+    spells it. Existing assertions changed with this item: rows 267
+    and 279, the limit shapes beside `ls -la`, a command over 400,000
+    characters with no host, the internal error on `make test`, and the
+    shapes of the speed tests that reach a limit; each says so where it
+    stands in the test file.
+    What the check of this version found in this item is in item 50.
+44. **Signal 0, a separator inside a word** (version 0.1.1, holds more;
+    plan item E; extends item 36). Where the program stands outside every
+    quote of its text (the text is read from its start for `'...'`,
+    `"..."`, `$'...'`, backslashes and comments), the words after signal 0
+    are also read as a shell reads them: a quote may open anywhere in a
+    word, `$'...'` is one, a backslash takes the next character with it,
+    and a blank or a `|`, `;`, `&` or newline inside a quote, inside the
+    braces of a `${...}` or inside a pair of parentheses opened in the
+    command belongs to its word. This search only adds to the one of item
+    36, which is kept as it was: a later option found by either makes the
+    command a kill. Where the program stands inside a quoted string of the
+    text around it, only the search of item 36 is made, so
+    `echo 'kill -0 2186 2>/dev/null' | ssh $H bash -s` is read as before.
+    The scanner reads zsh's `&>|`, `&>>|`, `>>|` and `>&|` as redirect
+    signs (bash takes the `|` for a pipe, which is the earlier reading and
+    is still made). Holds `pkill -0 -f x"a|b" --signal 9`,
+    `kill -0 $'a;b' -s KILL`, `kill -0 <pid> ${X:-;} -s KILL`,
+    `pkill -0 $((P|0)) --signal 9` and `kill -0 <pid> &>| /dev/null -s KILL`
+    on a configured host, which the first version held and every later one
+    passed. Left: `$[P|0]`, where the scanner cuts the command at the `|`,
+    and a line continuation inside `&>|`.
+    What the check of this version found in this item is in item 50.
+45. **The command form inside another reference** (version 0.1.1, holds
+    more; plan item F; completes item 37). `readWord` tests the text of a
+    reference for `${` followed by a blank, a newline or `|`, as
+    `readDouble` did, so `${A:-${ command; }}` and `${A[${ command; }]}`
+    outside double quotes are substitutions whose text is a command.
+46. **Time, four places** (version 0.1.1; plan item G; completes item 12).
+    No verdict changes. The three class B patterns with a run of flags
+    between a program and its verb (systemctl twice, docker) and the
+    method word behind `http` and its flags are checks that pass over the
+    text once (`afterFlags`): the pattern started again at every repeat of
+    the program's word and read the run to its end each time. The check
+    gives the match the pattern gives, the backtracking included (a word
+    behind a flag is taken for its value first, and a verb that stands
+    there is the match when nothing follows that way); it was compared
+    with the patterns on a million generated texts. `isFunctionHead` reads
+    a word once however many empty pairs follow it. `readWord` keeps the
+    last three characters of its word and whether it starts with `name=`
+    beside the word, where asking the word itself at every pair of
+    parentheses, or at every value put into it, read the whole word again.
+    `lastBraceOf` notes the string in hand where it equals a noted one, so
+    two long equal texts are compared once. Each of the shapes of the
+    finding, and four more found beside them, is read in under a tenth of
+    a second at 399,000 characters, where the slowest took 29 seconds.
+47. **A carried value through another form of reference** (version 0.1.1,
+    holds more; plan item H; extends items 14 and 25). `${NAME%word}`,
+    `%%`, `#`, `##`, `/`, `//`, `^`, `^^`, `,`, `,,`, `${NAME:offset}`,
+    `:-word`, `-word`, `:=word`, `=word`, `:?word` and `?word` are read
+    with the carried value of `NAME` in place, and `:+word` and `+word`
+    with `word` in place, in a word, in double quotes and in the copies of
+    texts the same shell reads again (`formValue`, `expandBody`). The value
+    stands in place unchanged: what `%` or `/` would take off it or put in
+    its place is not worked out (the plan allows applying `%` and `#`
+    exactly as a further spelling; that is not done). A value read this way
+    is a weak one (item 34): it adds holds and names a host, and a remote
+    target known only through it stays uncertain. It takes its room from
+    the rooms of item 42, so no value an earlier version put in place is
+    left out for it. Read as written, as before: a name with no carried
+    value or an empty one, a form whose word holds a variable or a
+    substitution (the substitution is still read as one, item 23), and the
+    forms not listed. Before, every such reference was an unknown variable,
+    so `BASE=http://rig-1.local:8080; curl -X POST "${BASE%/}/api/move"`
+    was not tried against class B in any version.
+    What the check of this version found in this item is in item 50.
+48. **A name with more than one literal value** (version 0.1.1, holds more;
+    plan item I; extends item 34). The reading with values in place keeps
+    the value written last before each use, exactly as before. Where a
+    literal value of a name replaces another one and a use of the name is
+    read after that, the text is read once more for each such earlier
+    value (each distinct value once), with that value kept in place from
+    its assignment on whatever is assigned to the name later (`Pin`,
+    `alsoEarlier`). Such a reading only adds its reasons: it exempts
+    nothing, makes no target certain, takes no reason away, and its own
+    doubt adds the raw text's reasons without making the verdict uncertain
+    (like the earlier scanner's reading, item 21). The texts inside it get
+    no further readings of their own. One command makes eight further
+    readings, each counted against the work of item 24; past either the
+    reader has stopped short (item 43). Holds the usual override,
+    `DEV=/dev/ttyUSB0; [ -n "$SIM" ] && DEV=/tmp/sim.txt; echo G1 X10 > "$DEV"`,
+    which passed in every version. Left: a later value that is not a
+    literal forgets the earlier one, as before, and the earlier values of
+    two names are not tried together.
+    What the check of this version found in this item is in item 50.
+49. **More words that stand before a command** (version 0.1.1, holds more;
+    plan item J; extends item 2). `sshpass`, `doas`, `flock`, `setsid`,
+    `watch`, `xargs`, `ionice`, `chrt`, `strace`, `unbuffer`, `builtin`,
+    zsh's `repeat`, `noglob` and `nocorrect`, and `coproc` are in a second
+    table beside the prefixes (`WRAPPERS`), each with the flags of its own
+    that take a value; `chrt` takes a priority, `repeat` a count and
+    `flock` a lock file before the command. `commandOf` reads the two
+    tables with one loop. Unlike the prefixes of rule 2, these words are
+    looked through in a second reading of the segment only (`judge`): the
+    segment is first judged with the word taken for its program, as every
+    earlier version judged it, and then with the command behind the word,
+    and the second reading adds its reasons (and, for the stages before it
+    in a pipeline, that a shell behind the word reads its standard input).
+    Looking through them in the first reading would have passed reads that
+    0.1.0 holds (`sshpass -p x ssh host 'grep -c shutdown log'`, held for
+    the word in its raw text), which this version may not do. The
+    arguments of `watch` together, and the value of flock's `-c`, are a
+    command text for a shell and are classified as one, like the string of
+    `eval`. `xargs` runs its template with arguments that are not in the
+    text: a template that is a remote shell on a configured host, and on a
+    configured host any template that is not exempt as a read, is held as
+    `unreadable`. There a template whose program is `readlink`, `realpath`,
+    `basename`, `dirname`, `md5sum`, `sha1sum`, `sha256sum`, `sha512sum`
+    or `cksum` is a read as well (`TEMPLATE_READS`): these print what
+    they read whatever arguments they are handed. The set is asked about
+    in that one place and is not part of rule 5's set, so no other
+    verdict changes; one such read stood in the owner's command history
+    and was the only command there whose verdict this version changed.
+    Holds `sshpass -p x ssh host bash < run.sh`,
+    `cat run.sh | setsid ssh host bash` and `ssh host 'doas bash' < run.sh`,
+    which passed in every version.
+    What the check of this version found in this item is in item 50.
+50. **What the check of version 0.1.1 left** (2026-11-17; no high finding;
+    nothing was changed in the code after it). Twelve findings were
+    confirmed, seven medium and five low, which are the eight defects
+    below; the README lists each under "Found by the check of 0.1.1 and
+    not fixed yet", and the gaps every version shares that the check
+    named are in the list above that.
+    - A value put in place hides a hold (items 40 and 47; against the
+      rule of item 34 that a weak value never takes a hold away). The
+      scanner joins two readings: every carried value in place, and none.
+      Item 47 puts the value of a form in place where 0.1.0 left the form
+      as written, and item 40 carries the value behind `time -p`. Where
+      such a value is a read-only program standing as the command word,
+      the reading with values in place is exempt by rule 5 and the
+      reading as written shows no target, so the hold that 0.1.0 made
+      with the target's value in place beside the form as written is
+      gone. Of 509,335 random mixed commands of the check, 190 that 0.1.0
+      holds pass, all of this class. The plain spelling (`$DRY`) passes
+      in every version. A third reading that only adds reasons (the
+      certain values in place, every weak one as written) would give the
+      holds back.
+    - A long value through a name the text does not show (item 43):
+      `namesLong` looks for the name as written, so an `eval` that builds
+      the name, `${!N}`, `declare -n`, `${!PREFIX*}`, a line continuation
+      inside the name and an exported value read by a child program reach
+      no limit. 0.1.0 held them by stopping at the assignment.
+    - Item 47 in text that is read again: `formValue` takes any word
+      without a `$`, a backtick or a process substitution, and
+      `BODY_REFERENCE`, which makes the second copies, only a word without
+      a quote, a backslash, `<`, `>`, `{` or `}`.
+    - The bound of item 48: `MAX_FURTHER` (8) is counted over all names of
+      the command, and an earlier value is queued whenever a later literal
+      replaces it, also where it could not reach a later use. The work
+      budget of item 24 already bounds the time (about 0.2 s in the
+      check's worst case), so the count could go.
+    - The template rule of item 49: on a configured host every template of
+      `xargs` outside rule 5's set and `TEMPLATE_READS` is held, a read
+      too, and a template of rule 5's set is held where a later stage of
+      its pipeline is outside that set (rule 5's exemption is asked for
+      the rest of the pipeline as well). The plan asked only that `xargs`
+      be looked through.
+    - `TEMPLATE_READS` is asked about the program alone, so an assignment
+      in front of it does not end the exemption as it does under rule 5.
+    - `--max-lines` is in the list of the flags of `xargs` that take a
+      value as a second word; GNU `xargs` takes it glued on only.
+    - The exact search of item 44 is made only where the kill command
+      stands outside every quote of the text in hand.
 
 ## Where the mod goes past the plan's texts
 

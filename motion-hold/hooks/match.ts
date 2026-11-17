@@ -5,7 +5,8 @@
 // Where the reader stops short of reading everything for a reason of its
 // own (a text too long, too deep or too nested, a budget spent, a value too
 // long to carry), it says so once for the whole call (`stopShort`), and
-// `classify` then also holds the command when it names a configured host.
+// `classify` then holds the command as input that cannot be read, whatever
+// it names: a command that was not read in full does not pass.
 //
 // A text is cut into words and commands the way the shells read it. Where
 // that reading parts from the one this matcher gave before its second review
@@ -21,9 +22,9 @@
 // Where the plan's table lets anything stand between two words
 // (`tee ... /sys/class/gpio/`, `pio run ... upload`), the check is a
 // function that passes over the text once, with no limit on the gap
-// (`afterTeeOrDd`, `pioUpload`, `composeVerb`). The gaps left in patterns
-// are the flags between `systemctl` or `docker` and a verb (one flag and at
-// most one value at a time). The speed tests in match.test.ts cover each.
+// (`afterTeeOrDd`, `pioUpload`, `composeVerb`), and so is a run of flags
+// between a program and its verb (`afterFlags`: `systemctl`, `docker`, the
+// method word behind `http`). The speed tests in match.test.ts cover each.
 
 export type HoldKind =
   | 'site'
@@ -216,7 +217,9 @@ export function hostOf(text: string, hosts: readonly string[]): string | null {
 // ---------------------------------------------------------------- built-in rules
 
 type Check = (text: string) => string | null
-type Rule = { kind: HoldKind; any?: RegExp[]; both?: RegExp[][]; fns?: Check[] }
+/** A pattern of the table, or a check that passes over the text once where a pattern would take quadratic time. */
+type Probe = RegExp | Check
+type Rule = { kind: HoldKind; any?: Probe[]; both?: Probe[][]; fns?: Check[] }
 
 /** How much of a long match a check hands back; the reason cuts it further. */
 const SHOWN_MAX = 200
@@ -280,6 +283,59 @@ const composeVerb: Check = text => {
   return null
 }
 
+/**
+ * `\b<program>\s+(-\S+\s+([^-\s]\S*\s+)?)*?<verb>` as one pass over the text: the program, then flags, each
+ * with one value at most (none where `hasValues` is false), then the verb. It gives the match the pattern
+ * gives. The pattern starts again at every repeat of the program's word and reads the run of flags to its end
+ * each time, which takes quadratic time on a long run that holds the word (`systemctl -x.systemctl -x. ...`);
+ * here a place from which the walk found nothing is noted (`dead`) and not walked again.
+ */
+function afterFlags(program: string, verb: string, hasValues: boolean): Check {
+  const head = `\\b(?:${program})\\s+`
+  const verbAt = new RegExp(verb, 'y')
+  const flagAt = /-\S+\s+/y
+  const valueAt = /[^-\s]\S*\s+/y
+  return text => {
+    const re = new RegExp(head, 'g')
+    const dead = new Set<number>()
+    for (let m = re.exec(text); m !== null; m = re.exec(text)) {
+      const walked: number[] = []
+      let pos = re.lastIndex
+      let isAfterFlag = false
+      let end = -1
+      for (;;) {
+        const key = pos * 2 + (isAfterFlag ? 1 : 0)
+        if (dead.has(key)) break
+        walked.push(key)
+        verbAt.lastIndex = pos
+        const verbEnd = verbAt.test(text) ? verbAt.lastIndex : -1
+        if (isAfterFlag && hasValues) {
+          // The word behind a flag is taken for its value first; where nothing follows that way, a verb
+          // that stands here is the match (the last such place wins, as the pattern backtracks).
+          valueAt.lastIndex = pos
+          if (valueAt.test(text)) {
+            if (verbEnd >= 0) end = verbEnd
+            pos = valueAt.lastIndex
+            isAfterFlag = false
+            continue
+          }
+        }
+        if (verbEnd >= 0) {
+          end = verbEnd
+          break
+        }
+        flagAt.lastIndex = pos
+        if (!flagAt.test(text)) break
+        pos = flagAt.lastIndex
+        isAfterFlag = true
+      }
+      if (end >= 0) return text.slice(m.index, end)
+      for (const key of walked) dead.add(key)
+    }
+    return null
+  }
+}
+
 /** A serial device: the Linux names of the table, and macOS's `tty.` twin of every `cu.` device. */
 const SERIAL = '/dev/(?:tty(?:USB|ACM|AMA|S)|(?:tty|cu)\\.)'
 
@@ -312,10 +368,13 @@ const CLASS_A: Rule[] = [
  * flag counts only at the start of a word, so a host named `rig-d.local` is
  * not read as `-d`. And added: the same short flags inside a cluster
  * (`-sX POST`, `-sd`), `--upload-file`, and wget's `--post-file` and
- * `--method`.
+ * `--method`. The method word after `http`/`https` and its flags is a check
+ * that passes over the text once (`afterFlags`).
  */
-const HTTP_WRITE =
-  /(^|[\s'"])-[A-Za-z]*X\s*(POST|PUT|PATCH|DELETE)|(^|[\s'"])-[A-Za-z]*[dF]\b|--request|--data|--json|--form|--post-data|--post-file|--method|--upload-file|\b(http|https)\s+(-\S+\s+)*(POST|PUT|PATCH|DELETE)\b/
+const HTTP_WRITE_FLAG =
+  /(^|[\s'"])-[A-Za-z]*X\s*(POST|PUT|PATCH|DELETE)|(^|[\s'"])-[A-Za-z]*[dF]\b|--request|--data|--json|--form|--post-data|--post-file|--method|--upload-file/
+const httpMethod = afterFlags('http|https', '(?:POST|PUT|PATCH|DELETE)\\b', false)
+const HTTP_WRITE: Check = text => HTTP_WRITE_FLAG.exec(text)?.[0] ?? httpMethod(text)
 
 /** curl's upload flag. For wget `-T` is a timeout, so it counts only where the text has `curl`. */
 const CURL_UPLOAD = /(^|[\s'"])-[A-Za-z]*T\b/
@@ -394,6 +453,122 @@ function hasLaterOption(text: string, from: number, isPkill: boolean): boolean {
   }
 }
 
+/** How far a text has been read for its quotes, and the quote that is open there (`$` stands for `$'...'`). */
+type Quoting = { i: number; quote: string }
+
+/**
+ * Whether the text is outside every quote at `to`, read from its start the way a shell reads it: `'...'`,
+ * `"..."` and `$'...'` quote, a backslash takes the next character with it, and a `#` that opens a word starts
+ * a comment that runs to the end of its line. `at` keeps the place reached, so asking again further along does
+ * not read the text again. A place inside a comment, or behind a backslash, is not outside.
+ */
+function isOutsideQuotes(text: string, to: number, at: Quoting): boolean {
+  let i = at.i
+  let quote = at.quote
+  while (i < to) {
+    const c = text.charAt(i)
+    if (quote === "'") {
+      if (c === "'") quote = ''
+    } else if (c === '\\') i++
+    else if (quote !== '') {
+      if (c === (quote === '$' ? "'" : '"')) quote = ''
+    } else if (c === "'") quote = i > 0 && text.charAt(i - 1) === '$' ? '$' : "'"
+    else if (c === '"') quote = '"'
+    else if (c === '#' && (i === 0 || ' \t\n;&|('.includes(text.charAt(i - 1)))) {
+      const nl = text.indexOf('\n', i)
+      i = nl < 0 ? text.length : nl
+      continue
+    }
+    i++
+  }
+  at.i = i
+  at.quote = quote
+  return i === to && quote === ''
+}
+
+/**
+ * The search of `hasLaterOption` for a command that stands outside every quote of its text, with its words read
+ * as a shell reads them: a quote may open anywhere in a word and `$'...'` is one, a backslash takes the next
+ * character with it, and a blank or a `;`, `&`, `|` or newline inside a quote, inside the braces of a `${...}`
+ * or inside a pair of parentheses opened in the command (`$((P|0))`, `(a|b)`) belongs to its word. It only adds
+ * to what `hasLaterOption` finds: a later option that one misses because a separator inside a word ended its
+ * search (`pkill -0 -f x"a|b" --signal 9`).
+ */
+function hasLaterOptionExact(text: string, from: number, isPkill: boolean): boolean {
+  const n = text.length
+  let i = from
+  /** The pairs of parentheses open in the command so far. */
+  let open = 0
+  for (;;) {
+    while (i < n && (text.charAt(i) === ' ' || text.charAt(i) === '\t' || text.charAt(i) === '\r')) i++
+    const start = i
+    while (i < n) {
+      const c = text.charAt(i)
+      if (c === ' ' || c === '\t' || c === '\r') break
+      if (c === '\\') {
+        i += 2
+        continue
+      }
+      if (c === "'") {
+        const j = text.indexOf("'", i + 1)
+        i = j < 0 ? n : j + 1
+        continue
+      }
+      const isAnsi = c === '$' && text.charAt(i + 1) === "'"
+      if (c === '"' || isAnsi) {
+        const close = isAnsi ? "'" : '"'
+        let j = isAnsi ? i + 2 : i + 1
+        while (j < n && text.charAt(j) !== close) j += text.charAt(j) === '\\' ? 2 : 1
+        i = Math.min(j + 1, n)
+        continue
+      }
+      if (c === '$' && text.charAt(i + 1) === '{') {
+        // To the brace that closes it, past any `${` nested in it; one that is never closed takes the rest of the text.
+        let deep = 0
+        let j = i + 1
+        for (; j < n; j++) {
+          const k = text.charAt(j)
+          if (k === '\\') j++
+          else if (k === '{' && text.charAt(j - 1) === '$') deep++
+          else if (k === '}' && --deep === 0) break
+        }
+        i = Math.min(j + 1, n)
+        continue
+      }
+      if (c === '$' || c === '`') {
+        PLAIN_SUBST.lastIndex = i
+        const m = PLAIN_SUBST.exec(text)
+        if (m !== null) {
+          if (KILL_INSIDE.test(m[0])) return true
+          i += m[0].length
+          continue
+        }
+      }
+      // A pair of parentheses opened in the command (arithmetic, a substitution, a glob group) is part of it;
+      // a `)` with no such pair open ends the group the command stands in.
+      if (c === '(') open++
+      else if (c === ')') {
+        if (open === 0) break
+        open--
+      } else if (open === 0) {
+        if (c === '\n' || c === ';') break
+        // `>|` is a redirect, not a pipe, and so is zsh's `>&|`.
+        if (c === '|' && text.charAt(i - 1) !== '>' && !(text.charAt(i - 1) === '&' && text.charAt(i - 2) === '>')) break
+        if (c === '&') {
+          // `>&`, `<&` and `&>` are redirects, not the end of the command.
+          const before = text.charAt(i - 1)
+          if (before !== '>' && before !== '<' && text.charAt(i + 1) !== '>') break
+        }
+      }
+      i++
+    }
+    if (i === start) return false
+    const word = text.slice(start, Math.min(i, n)).replace(/^(?:\$?["']|\\)+/, '')
+    if (/^--["']*$/.test(word)) return false
+    if (word.startsWith('-') && !(isPkill && PKILL_MATCH_FLAGS.test(word))) return true
+  }
+}
+
 /**
  * The table's `\b(kill|pkill|killall)\b`, less one form: signal 0 sends
  * nothing, it only asks whether the process exists (`kill -0 <pid>`,
@@ -403,11 +578,15 @@ function hasLaterOption(text: string, from: number, isPkill: boolean): boolean {
  */
 const killSignal: Check = text => {
   const re = new RegExp(KILL_WORD.source, 'g')
+  const at: Quoting = { i: 0, quote: '' }
   for (let m = re.exec(text); m !== null; m = re.exec(text)) {
     const zero = SIGNAL_ZERO[m[0]] as RegExp
     zero.lastIndex = re.lastIndex
     if (!zero.test(text)) return m[0]
-    if (hasLaterOption(text, zero.lastIndex, m[0] === 'pkill')) return m[0]
+    const isPkill = m[0] === 'pkill'
+    if (hasLaterOption(text, zero.lastIndex, isPkill)) return m[0]
+    // Where the program stands outside every quote of the text, its words are also read as a shell reads them.
+    if (isOutsideQuotes(text, m.index, at) && hasLaterOptionExact(text, zero.lastIndex, isPkill)) return m[0]
   }
   return null
 }
@@ -419,18 +598,20 @@ const killSignal: Check = text => {
  * (`systemctl --user restart`, `docker -H <host> stop`), `try-restart` and
  * `reload-or-restart`, `docker container stop`, `docker-compose` with a
  * hyphen and with flags before the verb, and `service <name> restart`.
+ * The three with a run of flags are `afterFlags` checks, each the pattern
+ * `\b<program>\s+(-\S+\s+([^-\s]\S*\s+)?)*?<verb>\b` read in one pass.
  */
 const CLASS_B: Rule[] = [
   {
     kind: 'service',
     any: [
-      /\bsystemctl\s+(-\S+\s+([^-\s]\S*\s+)?)*?((try-|reload-or-|try-reload-or-)?restart|stop|start|reload|kill)\b/,
-      /\bdocker\s+(-\S+\s+([^-\s]\S*\s+)?)*?(container\s+)?(restart|stop|kill|rm)\b/,
+      afterFlags('systemctl', '(?:(?:try-|reload-or-|try-reload-or-)?restart|stop|start|reload|kill)\\b', true),
+      afterFlags('docker', '(?:container\\s+)?(?:restart|stop|kill|rm)\\b', true),
       /\bservice\s+\S+\s+(restart|stop|start|reload)\b/,
     ],
     fns: [composeVerb],
   },
-  { kind: 'power', any: [/\b(reboot|shutdown|poweroff|halt)\b/, /\bsystemctl\s+(-\S+\s+([^-\s]\S*\s+)?)*?(reboot|poweroff|halt)\b/] },
+  { kind: 'power', any: [/\b(reboot|shutdown|poweroff|halt)\b/, afterFlags('systemctl', '(?:reboot|poweroff|halt)\\b', true)] },
   { kind: 'kill', fns: [killSignal] },
   {
     kind: 'http-write',
@@ -459,15 +640,18 @@ const PHRASES: [HoldKind, string][] = [
 
 const MATCH_MAX = 80
 
+/** A pattern's or a check's match in the first form of the text that has one. */
+const probe = (p: Probe, forms: readonly string[]): string | null => (typeof p === 'function' ? hitFn(p, forms) : hit(p, forms))
+
 function ruleReasons(rules: readonly Rule[], forms: readonly string[], host: string | null): Reason[] {
   const out: Reason[] = []
   for (const rule of rules) {
     for (const re of rule.any ?? []) {
-      const m = hit(re, forms)
+      const m = probe(re, forms)
       if (m !== null) out.push({ kind: rule.kind, match: clean(m.trim(), MATCH_MAX), host })
     }
     for (const set of rule.both ?? []) {
-      const found = set.map(re => hit(re, forms))
+      const found = set.map(re => probe(re, forms))
       if (found.every(m => m !== null)) out.push({ kind: rule.kind, match: clean((found[0] ?? '').trim(), MATCH_MAX), host })
     }
     for (const fn of rule.fns ?? []) {
@@ -539,6 +723,8 @@ type Word = {
   isWeak?: boolean
   /** On a word of the reading with values in place: one of the values put into it is a weak one. */
   tookWeak?: boolean
+  /** The same for a value that is carried only since version 0.1.0 (`Vars.late`). */
+  tookLate?: boolean
 }
 type Redirect = { isOut: boolean; target: string; target0?: string }
 type Seg = {
@@ -585,6 +771,8 @@ type Scanned = {
   differs: boolean
   /** Something in the text is read differently by different shells, so neither reading can be trusted. */
   isOpaque: boolean
+  /** The earlier literal values of names that were given another one before a use (see `Pin`). */
+  earlier: Pin[]
 }
 
 const blankSeg = (): Seg => ({
@@ -632,29 +820,69 @@ function plainOf(seg: Seg): Seg {
  * copies of texts the shell reads again (a substitution, an `eval` string).
  * A value is put in place while it fits in `left` or in the room of its own
  * kind, so the copies cannot use up the room of the words.
+ *
+ * `late`: the names whose value is carried only since version 0.1.0, as a
+ * weak one, where the version before did not carry it at all (see
+ * `noteAssignments`). Their uses take room from `lateRoom`, never from
+ * `room`, so every value the earlier version put in place still is.
  */
+type Room = { left: number; words: number; copies: number }
 type Vars = {
   map: Map<string, string>
   weak: Set<string>
-  left: number
-  words: number
-  copies: number
+  late: Set<string>
+  /** The names whose literal value is too long to carry (`VALUE_MAX`): a use of one that is read is a limit of the reader. */
+  long: Set<string>
+  room: Room
+  lateRoom: Room
   reps: [number, number, string][]
   usedWeak: boolean
+  usedLate: boolean
+  /** How many literal values each name has been given so far in this scan. */
+  count: Map<string, number>
+  /**
+   * The earlier literal values of a name that a later one has replaced (by their place among its values),
+   * while no use of the name has been read since. A use moves them to `earlier`: the text is then read once
+   * more for each, with that value kept in place (see `Pin`).
+   */
+  stale: Map<string, number[]>
+  /** The values of each name that already have such a reading coming, so the same value is not read twice. */
+  tried: Map<string, Set<string>>
+  earlier: Pin[]
+  /** This scan is such a further reading: the value its pin names is not replaced by a later one. */
+  pin: Pin | null
 }
 
-/** A value longer than this is not carried forward; an assignment of one is a limit of the reader (`stopShort`). */
+/**
+ * A name with more than one literal value: its value number `nth` in the text, counted from 1. In the reading
+ * with values in place the value written last before a use is the one in place, as before; a further reading
+ * of the text keeps the pinned value in place from its assignment on, whatever is assigned to the name later.
+ * Such a reading only adds reasons (`alsoEarlier`).
+ */
+type Pin = { name: string; nth: number }
+
+/** A use of a name is read: the earlier values a later one replaced are due a reading of their own. */
+function noteUse(vars: Vars, name: string): void {
+  const due = vars.stale.get(name)
+  if (due === undefined) return
+  vars.stale.delete(name)
+  for (const nth of due) vars.earlier.push({ name, nth })
+}
+
+/** A value longer than this is not carried forward; a use of its name that is read is a limit of the reader (`stopShort`). */
 const VALUE_MAX = 2000
 /** One scan expands at most this many characters of values in each kind of room, so a text cannot grow without bound. */
 const EXPAND_MAX = 20_000
+const newRoom = (): Room => ({ left: EXPAND_MAX, words: EXPAND_MAX, copies: EXPAND_MAX })
 
 /** Whether a value of this length still fits; takes its room. False is a limit of the reader: the value is left out. */
-function hasRoom(vars: Vars, length: number, isCopy: boolean): boolean {
-  const fitsAll = length <= vars.left
-  const fitsOwn = length <= (isCopy ? vars.copies : vars.words)
-  if (fitsAll) vars.left -= length
-  if (fitsOwn && isCopy) vars.copies -= length
-  else if (fitsOwn) vars.words -= length
+function hasRoom(vars: Vars, length: number, isCopy: boolean, isLate: boolean): boolean {
+  const room = isLate ? vars.lateRoom : vars.room
+  const fitsAll = length <= room.left
+  const fitsOwn = length <= (isCopy ? room.copies : room.words)
+  if (fitsAll) room.left -= length
+  if (fitsOwn && isCopy) room.copies -= length
+  else if (fitsOwn) room.words -= length
   if (fitsAll || fitsOwn) return true
   stopShort()
   return false
@@ -677,17 +905,19 @@ const STEPS_FLAT = 100_000
  * everything, for a reason of its own. `steps`: how many more steps the
  * closing readers may take.
  */
-const reading = { isShort: false, steps: 0 }
+const reading = { isShort: false, steps: 0, stops: 0, long: new Set<string>() }
 
 /**
  * The reader gives up a piece of the text in hand, or leaves a carried value
  * out, because of one of its own limits. Called wherever that happens and
  * acted on in one place, at the end of `classify`: the whole raw command is
- * then decided as rule 7 decides a text that cannot be taken apart, so no
- * limit ends in a pass that a full reading might have held.
+ * then held as input that cannot be read, so no limit ends in a pass that a
+ * full reading might have held. `stops` counts the calls, so a reader can
+ * tell whether a limit was reached while it worked.
  */
 function stopShort(): void {
   reading.isShort = true
+  reading.stops++
 }
 
 /** One more step of a closing reader; false when the call has no steps left, which is a limit of the reader. */
@@ -768,11 +998,102 @@ const isWordEnd = (s: string, i: number): boolean => i >= s.length || ' \t\n;&|)
 
 /** The value carried forward for a name, when there is one and room to expand it. */
 function valueOf(vars: Vars | null, name: string, start: number, end: number): string | null {
-  if (vars === null || vars.map.size === 0) return null
+  if (vars === null) return null
+  // A use of a name whose value was too long to carry: the value is left out here, which is a limit of the reader.
+  if (vars.long.size > 0 && vars.long.has(name)) stopShort()
+  if (vars.stale.size > 0) noteUse(vars, name)
+  if (vars.map.size === 0) return null
   const value = vars.map.get(name)
-  if (value === undefined || !hasRoom(vars, value.length, false)) return null
+  if (value === undefined) return null
+  const isLate = vars.late.has(name)
+  if (!hasRoom(vars, value.length, false, isLate)) return null
   vars.reps.push([start, end, value])
   if (vars.weak.has(name)) vars.usedWeak = true
+  if (isLate) vars.usedLate = true
+  return value
+}
+
+/** A name behind a `$`, wherever it stands in a text: `$NAME`, `${NAME...`, `${#NAME...` and `${!NAME...`. */
+const NAMED_AT = /\$\{?[#!]?([A-Za-z_][A-Za-z0-9_]*)/g
+
+/**
+ * A use of a name whose value was too long to carry, in any spelling behind a `$`: also the forms that are not
+ * read with a value in place (`${NAME@Q}`, `${#NAME}`) and a name inside the word of another reference
+ * (`${OTHER:-$NAME}`). The value is left out there, which is a limit of the reader.
+ */
+function noteLongUses(vars: Vars, text: string): void {
+  if (vars.long.size === 0 || !text.includes('$')) return
+  NAMED_AT.lastIndex = 0
+  for (let m = NAMED_AT.exec(text); m !== null; m = NAMED_AT.exec(text)) {
+    if (vars.long.has(m[1] as string)) {
+      stopShort()
+      return
+    }
+  }
+}
+
+/** A name, wherever one stands in a text. */
+const LONG_NAME_AT = /[A-Za-z_][A-Za-z0-9_]*/g
+
+/**
+ * Whether a text names, anywhere but where it is assigned (`NAME=` at the start of a word), one of the names
+ * whose value was too long to carry in this call (`reading.long`). Such a name may be a use the reader has no
+ * rule for: a bare name in arithmetic, a function written before the assignment, a name another name stands
+ * for. Which of them the shell reads the value through is not worked out: the value was left out, the name
+ * stands again, and that is a limit of the reader. Asked of every text a scan reads, at its end, and of the
+ * raw command at the end of `classify`, so it does not matter in which order the texts were read.
+ */
+function namesLong(text: string): boolean {
+  if (reading.long.size === 0) return false
+  LONG_NAME_AT.lastIndex = 0
+  for (let m = LONG_NAME_AT.exec(text); m !== null; m = LONG_NAME_AT.exec(text)) {
+    if (!reading.long.has(m[0])) continue
+    const end = LONG_NAME_AT.lastIndex
+    if (text.charAt(end) !== '=' || text.charAt(end + 1) === '=') return true
+    // `NAME=`: the assignment itself, where a word of a command can start; a use anywhere else (`$NAME=x`).
+    const at = m.index
+    const before = at === 0 ? ' ' : text.charAt(at - 1)
+    const isOpening = before === '{' ? at < 2 || text.charAt(at - 2) !== '$' : ' \t\n;&|(\'"`'.includes(before)
+    if (!isOpening) return true
+  }
+  return false
+}
+
+/**
+ * The forms of a reference, other than `$NAME` and `${NAME}`, through which a carried value is read: the name,
+ * then `%`, `%%`, `#`, `##`, `/`, `//`, `^`, `^^`, `,`, `,,`, a `:` before an offset, `:-`, `-`, `:=`, `=`,
+ * `:?` or `?` (the value stands in place, as it is: what the operator would take off it or put in its place
+ * is not worked out), or `:+` or `+` (the word behind the operator stands in place).
+ */
+const FORM_SOURCE = '([A-Za-z_][A-Za-z0-9_]*)(:[-=?+]|:(?=[0-9 ])|%%?|##?|\\/\\/?|\\^\\^?|,,?|[-=?+])'
+const FORM = new RegExp(`^${FORM_SOURCE}`)
+
+/**
+ * The value a reference of one of those forms is read with, where its name has a carried value: a weak one,
+ * which adds holds and names a host and never makes a target certain. It takes its room from the room of the
+ * values carried only since version 0.1.0, so no value an earlier version put in place is left out for it.
+ * Null, and the reference is read as written, as before: where the name has no value or an empty one, where
+ * the word behind the operator holds a variable or a substitution of its own (that one is read as before),
+ * and for the forms not listed.
+ */
+function formValue(vars: Vars | null, inner: string, start: number, end: number): string | null {
+  if (vars === null || (vars.map.size === 0 && vars.long.size === 0)) return null
+  const m = FORM.exec(inner)
+  if (m === null) return null
+  const name = m[1] as string
+  const word = inner.slice(m[0].length)
+  if (/[$`]|[<>]\(/.test(word)) return null
+  if (vars.long.has(name)) stopShort()
+  if (vars.stale.size > 0) noteUse(vars, name)
+  const carried = vars.map.get(name)
+  if (carried === undefined || carried === '') return null
+  const isWord = m[2] === ':+' || m[2] === '+'
+  if (isWord && /['"\\{}]/.test(word)) return null
+  const value = isWord ? word : carried
+  if (!hasRoom(vars, value.length, false, true)) return null
+  vars.reps.push([start, end, value])
+  vars.usedWeak = true
+  vars.usedLate = true
   return value
 }
 
@@ -805,8 +1126,45 @@ function skipBlanks(s: string, i: number): number {
  * nested `${ }`, `$( )`, backticks and quotes; -1 when it is not closed.
  * `isQuoting`: a single quote inside the braces quotes, as it does outside
  * double quotes. `seen.quote` is set when one is met that does not.
+ *
+ * The answer is kept for each text, start and way of quoting (`closed`), so
+ * a brace is closed once however often it is asked for: a single quote
+ * inside `${...}` nested in double quotes has every level asked for twice
+ * by the level around it (see `readRef`), which without the note doubles
+ * the work at every level. An answer found while a limit of the reader was
+ * reached is not kept.
  */
 function closeBrace(s: string, i: number, isQuoting: boolean, depth: number, seen: { quote: boolean }): number {
+  if (closed.text !== s) closed.at.clear()
+  // The very string in hand is noted, so that the comparison above is of a string with itself the next time.
+  closed.text = s
+  const key = i * 2 + (isQuoting ? 1 : 0)
+  const known = closed.at.get(key)
+  if (known !== undefined) {
+    if (known < 0) seen.quote = true
+    return known < 0 ? -known - 2 : known - 1
+  }
+  const mine = { quote: false }
+  const stops = reading.stops
+  const k = closeBraceOnce(s, i, isQuoting, depth, mine)
+  if (mine.quote) seen.quote = true
+  // Kept as `k + 1`, or as `-(k + 2)` where a single quote that does not quote was met on the way.
+  if (reading.stops === stops) closed.at.set(key, mine.quote ? -k - 2 : k + 1)
+  return k
+}
+
+/**
+ * The braces closed so far in the text in hand (see `closeBrace`). Forgotten when another text is read, and at
+ * the start and the end of every scan: a reader notes on the scan in hand what it meets on the way
+ * (`scanning.differs`, `scanning.isOpaque`), so each scan has to meet it for itself.
+ */
+const closed = { text: '', at: new Map<number, number>() }
+function forgetClosed(): void {
+  closed.text = ''
+  closed.at.clear()
+}
+
+function closeBraceOnce(s: string, i: number, isQuoting: boolean, depth: number, seen: { quote: boolean }): number {
   if (depth > NEST_MAX) {
     // Not an unclosed brace: the reader does not follow the nest this deep.
     stopShort()
@@ -869,8 +1227,8 @@ type Ref = { end: number; text: string; value: string | null; isOpen: boolean }
  * Where the last `}` of a text stands (-1: it has none). Looked for once for the text a scan is reading (`scan`
  * notes it) and once for any other text the closing readers are handed (`noteText`: a heredoc body, a text asked
  * whether it is nothing but variables), so that asking at every `${` costs nothing. Each is noted as the very
- * string the readers then get, so the two comparisons below are of a string with itself or with one of another
- * length, never of two long strings with the same text.
+ * string the readers then get, so the comparisons below are of a string with itself or with one of another
+ * length; where two long strings with the same text meet, the one in hand is noted (`lastBraceOf`).
  */
 const braces = { text: '', textLast: -1, other: '', otherLast: -1 }
 function noteText(s: string): void {
@@ -878,8 +1236,18 @@ function noteText(s: string): void {
   braces.otherLast = s.lastIndexOf('}')
 }
 function lastBraceOf(s: string): number {
-  if (s === braces.other) return braces.otherLast
-  if (s === braces.text) return braces.textLast
+  // Where the text in hand equals a noted one but is another string (a text that was asked whether it is
+  // nothing but variables, then scanned as what a producer writes), the string in hand is noted in its
+  // place: the next comparison is then of a string with itself, where comparing the two long equal texts
+  // at every `${` took time with the square of their length.
+  if (s === braces.other) {
+    braces.other = s
+    return braces.otherLast
+  }
+  if (s === braces.text) {
+    braces.text = s
+    return braces.textLast
+  }
   return s.lastIndexOf('}')
 }
 
@@ -910,13 +1278,14 @@ function readRef(s: string, i: number, vars: Vars | null, inDouble: boolean, dep
       if (k < 0 || s.indexOf('}', i + 2) !== k) scanning.differs = true
     }
     const end = k < 0 ? s.length : k + 1
+    if (vars !== null && vars.long.size > 0) noteLongUses(vars, s.slice(i, end))
     let inner = k < 0 ? '' : s.slice(i + 2, k)
     if (!scanning.isLegacy && inner.includes('\\\n')) {
       // A continuation inside the name is joined by the shell.
       inner = inner.replace(/\\\n/g, '')
       scanning.differs = true
     }
-    return { end, text: s.slice(i, end), value: k < 0 ? null : valueOf(vars, inner, i, end), isOpen: k < 0 }
+    return { end, text: s.slice(i, end), value: k < 0 ? null : (valueOf(vars, inner, i, end) ?? formValue(vars, inner, i, end)), isOpen: k < 0 }
   }
   // A continuation between `$` and the name is joined by the shell, like one inside the name.
   let at = i + 1
@@ -1194,23 +1563,39 @@ function readWord(s: string, i: number, vars: Vars | null, isArgument = false): 
   let substs: string[] | null = null
   const start = i
   const n = s.length
+  /**
+   * Two things about `v`, kept beside it as it grows: its last three characters (`tail`), and whether it
+   * starts with `name=` (`head`: 0 not yet known, 1 it does, 2 it does not). Asking the word itself for
+   * either, at every pair of parentheses or every value put into a long word, read the whole word again
+   * each time.
+   */
+  let tail = ''
+  let head = 0
+  const add = (t: string): void => {
+    for (let k = 0; k < t.length && head === 0; k++) {
+      const ch = t.charAt(k)
+      const at = v.length + k
+      if (ch === '=') head = at > 0 ? 1 : 2
+      else if (!(at === 0 ? /[A-Za-z_]/ : /[A-Za-z0-9_]/).test(ch)) head = 2
+    }
+    v += t
+    tail = t.length >= 3 ? t.slice(-3) : (tail + t).slice(-3)
+  }
   /** A substitution opened at `i` whose text starts at `from` and closes at `k` (-1: it does not close). */
   const subst = (from: number, k: number): void => {
     hasSubst = true
     hasVar = true
     ;(substs ??= []).push(s.slice(from, k < 0 ? n : k))
     if (k < 0) isOpen = true
-    v += s.slice(i, k < 0 ? n : k + 1)
+    add(s.slice(i, k < 0 ? n : k + 1))
     i = k < 0 ? n : k + 1
   }
   while (i < n) {
     const c = s.charAt(i)
     if (c === ' ' || c === '\t' || c === '\r' || c === '\n' || c === ';' || c === '|' || c === '&' || c === '<' || c === '>' || c === ')') break
     if (c === '(') {
-      // name=( ... ): an array assignment is one word.
-      // Behind a `)` the word so far ends in that `)`, never in `name=`: asking the word itself there, at
-      // every pair of a long run of glued pairs, read the whole word again each time.
-      const isArray = s.charAt(i - 1) !== ')' && endsInAssign(v)
+      // name=( ... ): an array assignment is one word. (Behind a `)` the word so far ends in that `)`.)
+      const isArray = s.charAt(i - 1) !== ')' && endsInAssign(tail)
       if (!isArray) {
         // At the start of a word a `(` opens a group, and an empty pair after a name defines a function:
         // both end the word. Any other pair glued into a word is part of it: a zsh glob qualifier
@@ -1227,7 +1612,7 @@ function readWord(s: string, i: number, vars: Vars | null, isArgument = false): 
       }
       if (/[$`]/.test(inside)) hasVar = true
       if (k < 0) isOpen = true
-      v += s.slice(i, k < 0 ? n : k + 1)
+      add(s.slice(i, k < 0 ? n : k + 1))
       i = k < 0 ? n : k + 1
       continue
     }
@@ -1238,7 +1623,7 @@ function readWord(s: string, i: number, vars: Vars | null, isArgument = false): 
     }
     if (c === '\\') {
       // A backslash-newline joins the two lines; any other pair is the second character.
-      if (s.charAt(i + 1) !== '\n') v += i + 1 < n ? s.charAt(i + 1) : c
+      if (s.charAt(i + 1) !== '\n') add(i + 1 < n ? s.charAt(i + 1) : c)
       i += 2
       continue
     }
@@ -1246,17 +1631,17 @@ function readWord(s: string, i: number, vars: Vars | null, isArgument = false): 
       const j = s.indexOf("'", i + 1)
       if (j < 0) {
         isOpen = true
-        v += s.slice(i + 1)
+        add(s.slice(i + 1))
         i = n
       } else {
-        v += s.slice(i + 1, j)
+        add(s.slice(i + 1, j))
         i = j + 1
       }
       continue
     }
     if (c === '"') {
       const d = readDouble(s, i, vars, 0, true)
-      v += d.v
+      add(d.v)
       if (d.hasSubst) hasSubst = true
       if (d.hasVar) hasVar = true
       if (d.isExpanded) isExpanded = true
@@ -1282,7 +1667,7 @@ function readWord(s: string, i: number, vars: Vars | null, isArgument = false): 
         }
         if (!/[A-Za-z_]/.test(s.charAt(p))) {
           hasVar = true
-          v += c
+          add(c)
           i = p
           continue
         }
@@ -1290,7 +1675,7 @@ function readWord(s: string, i: number, vars: Vars | null, isArgument = false): 
       }
       if (d === "'") {
         const a = readAnsi(s, i)
-        v += a.v
+        add(a.v)
         if (!a.isClosed) isOpen = true
         i = a.end
         continue
@@ -1309,29 +1694,32 @@ function readWord(s: string, i: number, vars: Vars | null, isArgument = false): 
             // `${ command; }` and `${| command; }`: the braces hold a command, which runs.
             hasSubst = true
             ;(substs ??= []).push(commandFormOf(joined, ref.isOpen))
-          } else if (/\$\(|`|[<>]\(/.test(joined)) {
-            // A substitution inside the braces, a process substitution too (`${A:-<(command)}`).
+          } else if (/\$\(|`|[<>]\(|\$\{[ \t\n|]/.test(joined)) {
+            // A substitution inside the braces, a process substitution too (`${A:-<(command)}`), and the
+            // command form inside another reference (`${A:-${ command; }}`).
             hasSubst = true
             ;(substs ??= []).push(ref.text.slice(2, ref.isOpen ? undefined : -1))
           }
-          v += ref.text
+          add(ref.text)
         } else {
           isExpanded = true
           // An unquoted value is split at its blanks, as the shell splits it; the value of an assignment is not.
-          const parts = /^[A-Za-z_][A-Za-z0-9_]*=/.test(v) ? [ref.value] : ref.value.split(/[ \t\n]+/)
+          const parts = head === 1 ? [ref.value] : ref.value.split(/[ \t\n]+/)
           for (let k = 0; k < parts.length; k++) {
             if (k > 0 && v !== '') {
               ;(pre ??= []).push(v)
               v = ''
+              tail = ''
+              head = 0
             }
-            v += parts[k] ?? ''
+            add(parts[k] ?? '')
           }
         }
         i = ref.end
         continue
       }
     }
-    v += c
+    add(c)
     i++
   }
   return { v, end: Math.min(i, n), hasSubst, isOpen, hasVar, isExpanded, pre, substs }
@@ -1400,15 +1788,26 @@ function bodySubsts(body: string): { texts: string[]; isOpen: boolean } {
  * `isCopy`: the text is a second copy of one that is also read as written (see `Vars`).
  */
 function expandBody(body: string, vars: Vars, isCopy: boolean): string {
+  noteLongUses(vars, body)
   if (vars.map.size === 0 || !body.includes('$')) return body
-  return body.replace(/\\[\s\S]|\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)/g, (all: string, a?: string, b?: string) => {
-    const name = a ?? b
+  return body.replace(BODY_REFERENCE, (all: string, a?: string, b?: string, form?: string, op?: string, word?: string) => {
+    const name = a ?? b ?? form
     if (name === undefined) return all
+    if (vars.stale.size > 0) noteUse(vars, name)
     const value = vars.map.get(name)
-    if (value === undefined || !hasRoom(vars, value.length, isCopy)) return all
+    if (value === undefined) return all
+    if (form !== undefined) {
+      // A value read through another form (see `formValue`): the same value, or the word behind `:+` and `+`.
+      if (value === '') return all
+      const put = op === ':+' || op === '+' ? (word ?? '') : value
+      return hasRoom(vars, put.length, isCopy, true) ? put : all
+    }
+    if (!hasRoom(vars, value.length, isCopy, vars.late.has(name))) return all
     return value
   })
 }
+/** An escaped character, `${NAME}`, `$NAME`, or a reference of another form whose word is plain text (see `FORM_SOURCE`). */
+const BODY_REFERENCE = new RegExp(`\\\\[\\s\\S]|\\$\\{([A-Za-z_][A-Za-z0-9_]*)\\}|\\$([A-Za-z_][A-Za-z0-9_]*)|\\$\\{${FORM_SOURCE}([^$\`'"\\\\{}<>]*)\\}`, 'g')
 
 /**
  * Words rule 2 looks through, behind which a command, an assignment, a `case` or a group may stand.
@@ -1443,7 +1842,7 @@ const FD_JOINED_AT = /\d+(?:\\\n)+(?=[<>])/y
  * reading parts from it (`differs`), so no hold of the earlier reading is
  * lost to the newer one.
  */
-function scan(s: string, canExpand: boolean, isLegacy: boolean, isPart = false): Scanned {
+function scan(s: string, canExpand: boolean, isLegacy: boolean, isPart = false, pin: Pin | null = null): Scanned {
   scanning.isLegacy = isLegacy
   scanning.isPart = isPart
   scanning.differs = false
@@ -1451,15 +1850,17 @@ function scan(s: string, canExpand: boolean, isLegacy: boolean, isPart = false):
   reading.steps += STEPS_PER_CHAR * s.length
   braces.text = s
   braces.textLast = s.lastIndexOf('}')
+  forgetClosed()
   try {
-    return scanText(s, canExpand, isLegacy)
+    return scanText(s, canExpand, isLegacy, pin)
   } finally {
     scanning.isLegacy = false
     scanning.isPart = false
+    forgetClosed()
   }
 }
 
-function scanText(s: string, canExpand: boolean, isLegacy: boolean): Scanned {
+function scanText(s: string, canExpand: boolean, isLegacy: boolean, pin: Pin | null): Scanned {
   const segs: Seg[] = []
   const comments: string[] = []
   let isUncertain = false
@@ -1470,7 +1871,22 @@ function scanText(s: string, canExpand: boolean, isLegacy: boolean): Scanned {
   let textEnd = -1
   let cur = blankSeg()
   let pending: { seg: Seg; delim: string; isTabbed: boolean; isQuoted: boolean }[] = []
-  const vars: Vars = { map: new Map(), weak: new Set(), left: EXPAND_MAX, words: EXPAND_MAX, copies: EXPAND_MAX, reps: [], usedWeak: false }
+  const vars: Vars = {
+    map: new Map(),
+    weak: new Set(),
+    late: new Set(),
+    long: new Set(),
+    room: newRoom(),
+    lateRoom: newRoom(),
+    reps: [],
+    usedWeak: false,
+    usedLate: false,
+    count: new Map(),
+    stale: new Map(),
+    tried: new Map(),
+    earlier: [],
+    pin,
+  }
   let counts: { all: Map<string, number>; flags: Map<string, number>; declared: Set<string> } | null = null
   /**
    * The last top-level `)` of the segment, while no word has followed it: how many words stood before
@@ -1512,6 +1928,8 @@ function scanText(s: string, canExpand: boolean, isLegacy: boolean): Scanned {
   }
   /** The executable of a segment, as rule 2 finds it. */
   const exeOf = (seg: Seg): Command => commandOf(seg.cut > 0 ? seg.words.slice(seg.cut) : seg.words)
+  /** Some name has a value to put in place, or one too long to carry, whose use is a limit (`expandBody`). */
+  const hasValues = (): boolean => vars.map.size > 0 || vars.long.size > 0
   /**
    * Rule 2a: a segment that is only assignments sets or forgets each name. It may stand behind the
    * words rule 2 looks through (`{`, `then`, `do`, `else`, a case pattern, a function's brace) and
@@ -1521,12 +1939,21 @@ function scanText(s: string, canExpand: boolean, isLegacy: boolean): Scanned {
     if (!canExpand) return
     const words = cur.words
     let k = cur.cut
+    /** The assignment stands behind `time`, which is looked through only since version 0.1.0. */
+    let isTimed = false
     for (;;) {
       const raw = words[k]?.raw
       if (raw === undefined) return
       if (raw === 'function') k += 2
-      else if (LEADS.has(raw)) k++
-      else break
+      else if (LEADS.has(raw)) {
+        k++
+        // The `-p` of `time` is looked through with it, as `push` does, and the `--` that may end its options.
+        if (raw === 'time') {
+          isTimed = true
+          if (words[k]?.raw === '-p') k++
+          if (words[k]?.raw === '--') k++
+        }
+      } else break
     }
     // Only a plain or exported assignment that stands first in its segment may make the target of a
     // remote shell certain (the one place where a carried value takes a hold away). Every other one
@@ -1573,15 +2000,48 @@ function scanText(s: string, canExpand: boolean, isLegacy: boolean): Scanned {
       const all = counts.all.get(name) ?? 0
       const flags = counts.flags.get(name) ?? 0
       const isCarriable = isAsWritten && w.hasVar !== true && !/[$`\n]/.test(value)
-      // A value that would be carried but for its length is left out: a limit of the reader, not a variable it cannot know.
-      if (isCarriable && value.length > VALUE_MAX) stopShort()
+      // In a further reading (`Pin`) the pinned value of its name stays in place once it is assigned.
+      const isPinned = pin !== null && pin.name === name && (vars.count.get(name) ?? 0) >= pin.nth
       if (!isCarriable || value.length > VALUE_MAX) {
+        if (isPinned) continue
         vars.map.delete(name)
         vars.weak.delete(name)
+        vars.late.delete(name)
+        // A value that would be carried but for its length is left out. That is a limit of the reader, not a
+        // variable it cannot know, and it is reached where a use of the name is read (`valueOf`,
+        // `noteLongUses`) and wherever else the name stands again in the command (`namesLong`); a long value
+        // whose name stands nowhere else leaves nothing unread.
+        if (isCarriable) {
+          vars.long.add(name)
+          reading.long.add(name)
+        } else vars.long.delete(name)
       } else {
+        const nth = (vars.count.get(name) ?? 0) + 1
+        vars.count.set(name, nth)
+        if (isPinned) continue
+        // A literal value that replaces another one of the same name: the earlier value is due a reading of
+        // its own once a use of the name is read (`noteUse`), each distinct value once.
+        const before = vars.map.get(name)
+        if (pin === null && before !== undefined && before !== value) {
+          const tried = vars.tried.get(name) ?? new Set<string>()
+          vars.tried.set(name, tried)
+          if (!tried.has(before)) {
+            tried.add(before)
+            const due = vars.stale.get(name)
+            if (due === undefined) vars.stale.set(name, [nth - 1])
+            else due.push(nth - 1)
+          }
+        }
+        vars.long.delete(name)
         vars.map.set(name, value)
-        if (isWeak || flags > 0 || all - flags !== 1 || counts.declared.has(name) || w.tookWeak === true) vars.weak.add(name)
+        // The values that are carried only since version 0.1.0, each of them a weak one: a name with another
+        // bare use or a bare declaration, an assignment behind `time`, a value put together from such a value.
+        // They take their room from a room of their own (`Vars.late`).
+        const isLate = all - flags !== 1 || counts.declared.has(name) || isTimed || w.tookLate === true
+        if (isWeak || flags > 0 || isLate || w.tookWeak === true) vars.weak.add(name)
         else vars.weak.delete(name)
+        if (isLate) vars.late.add(name)
+        else vars.late.delete(name)
       }
     }
   }
@@ -1592,7 +2052,7 @@ function scanText(s: string, canExpand: boolean, isLegacy: boolean): Scanned {
    * command of its own, beside the text as written.
    */
   const noteReread = (): void => {
-    if (!canExpand || vars.map.size === 0) return
+    if (!canExpand || !hasValues()) return
     if (!cur.words.some(w => w.v.includes('$')) && (cur.here === null || !cur.here.includes('$'))) return
     const { exe, rest } = exeOf(cur)
     const texts: string[] = []
@@ -1647,7 +2107,7 @@ function scanText(s: string, canExpand: boolean, isLegacy: boolean): Scanned {
    */
   const keep = (t: string): void => {
     cur.substs.push(t)
-    if (!canExpand || vars.map.size === 0) return
+    if (!canExpand || !hasValues()) return
     const joined = joinedOf(t)
     const x = expandBody(joined, vars, true)
     if (x !== joined) cur.substs.push(x)
@@ -1712,9 +2172,17 @@ function scanText(s: string, canExpand: boolean, isLegacy: boolean): Scanned {
     }
   }
   /** Whether the words of the segment are a function's name and nothing else (`f`, `function f`, `then f`), so an empty `()` after them defines it. */
+  let headWord: Word | undefined
+  let isHeadName = false
   const isFunctionHead = (): boolean => {
     const last = cur.words[cur.words.length - 1]
-    return cur.words.length > cur.cut && leadBefore && last !== undefined && !LEADS.has(last.raw) && /^[^\s'"`$=]+$/.test(last.raw)
+    if (cur.words.length <= cur.cut || !leadBefore || last === undefined) return false
+    // The word is read once, however many empty pairs follow it.
+    if (last !== headWord) {
+      headWord = last
+      isHeadName = !LEADS.has(last.raw) && /^[^\s'"`$=]+$/.test(last.raw)
+    }
+    return isHeadName
   }
   /** The word at `at` as written, where a value replaced a variable in it. */
   const plain = (w: ReadWord, at: number): string | undefined => (w.isExpanded ? readWord(s, at, null).v : undefined)
@@ -1770,7 +2238,7 @@ function scanText(s: string, canExpand: boolean, isLegacy: boolean): Scanned {
           } else {
             p.seg.bodies0.push(body)
             // A local shell fed this body expands it, with the values it inherits (rule 2a).
-            if (canExpand && vars.map.size > 0 && body.includes('$')) {
+            if (canExpand && hasValues() && body.includes('$')) {
               const exe = exeOf(p.seg).exe
               const x = exe !== null && SHELL.test(exe) ? expandBody(body, vars, true) : body
               if (x !== body) p.seg.substs.push(x)
@@ -1817,6 +2285,12 @@ function scanText(s: string, canExpand: boolean, isLegacy: boolean): Scanned {
       } else if (d === '>') {
         let j = i + 2
         if (s.charAt(j) === '>') j++
+        if (!isLegacy && s.charAt(j) === '|' && s.charAt(j + 1) !== '|') {
+          // zsh's `&>|` (and `&>>|`): the `|` belongs to the redirect sign, as it does in `>|`, and the
+          // command goes on behind the target. The earlier reading takes it for a pipe.
+          j++
+          scanning.differs = true
+        }
         const at = skipBlanks(s, j)
         const w = readWord(s, at, vars)
         take(w)
@@ -1948,6 +2422,11 @@ function scanText(s: string, canExpand: boolean, isLegacy: boolean): Scanned {
         isFd = true
         j = at2 + 1
       } else if (c === '<' && d === '>') j = at2 + 1
+      if (!isLegacy && c === '>' && (d === '>' || d === '&') && s.charAt(j) === '|' && s.charAt(j + 1) !== '|') {
+        // zsh's `>>|` and `>&|`, like its `&>|`: the `|` belongs to the redirect sign. The earlier reading takes it for a pipe.
+        j++
+        scanning.differs = true
+      }
       const at = skipBlanks(s, j)
       const mark = isFd ? '&' : ''
       const isOut = c === '>' || d === '>'
@@ -1987,6 +2466,7 @@ function scanText(s: string, canExpand: boolean, isLegacy: boolean): Scanned {
     }
     beforeWord()
     vars.usedWeak = false
+    vars.usedLate = false
     const w = readWord(s, i, vars, isArgument)
     if (w.end <= i) {
       i++
@@ -2014,7 +2494,8 @@ function scanText(s: string, canExpand: boolean, isLegacy: boolean): Scanned {
       const weak = vars.usedWeak ? { isWeak: true } : {}
       const word0: Word = { v: readWord(s, i, null, isArgument).v, raw, hasVar: true, ...(isLit && !isGone ? { vx: w.v } : {}), ...weak }
       if (w.pre) for (const part of w.pre) push({ v: part, raw: '', isLit: true }, null)
-      push(isGone ? null : { v: w.v, raw, ...(w.hasVar ? { hasVar: true } : {}), ...(isLit ? { isLit: true } : {}), ...(vars.usedWeak ? { tookWeak: true } : {}) }, word0)
+      const took = { ...(vars.usedWeak ? { tookWeak: true } : {}), ...(vars.usedLate ? { tookLate: true } : {}) }
+      push(isGone ? null : { v: w.v, raw, ...(w.hasVar ? { hasVar: true } : {}), ...(isLit ? { isLit: true } : {}), ...took }, word0)
     }
     if (!isLegacy) {
       noteKeyword(raw)
@@ -2029,7 +2510,9 @@ function scanText(s: string, canExpand: boolean, isLegacy: boolean): Scanned {
   }
   endSeg(n, false, n)
   if (pending.length > 0) isUncertain = true
-  return { segs, comments, isUncertain, hasExpansions, differs: scanning.differs, isOpaque: scanning.isOpaque }
+  // A name whose value was too long to carry stands again in this text: the value was left out of a use.
+  if (reading.long.size > 0 && !reading.isShort && namesLong(s)) stopShort()
+  return { segs, comments, isUncertain, hasExpansions, differs: scanning.differs, isOpaque: scanning.isOpaque, earlier: vars.earlier }
 }
 
 // ---------------------------------------------------------------- segments
@@ -2062,6 +2545,45 @@ const PREFIXES: Record<string, readonly string[]> = {
   function: [],
 }
 
+/**
+ * More words that run the command after them, looked through since version
+ * 0.1.1, each with the flags of its own that take the next word as their
+ * value. They are looked through in a second reading of the segment only
+ * (`commandOf` with `isBehind`, asked by `judge`): the first reading takes
+ * such a word for the program, as every earlier version did, and the second
+ * adds what the command behind it gives. So input fed to a remote shell
+ * behind one (`sshpass -p x ssh host bash < file`) is input that cannot be
+ * read, and nothing an earlier version held behind such a word is lost.
+ */
+const WRAPPERS: Record<string, readonly string[]> = {
+  sshpass: ['-p', '-f', '-d', '-P'],
+  doas: ['-u', '-C', '-a'],
+  flock: ['-w', '--wait', '--timeout', '-E', '--conflict-exit-code'],
+  setsid: [],
+  watch: ['-n', '--interval', '-q', '--equexit'],
+  xargs: ['-I', '-n', '-P', '-L', '-s', '-d', '-E', '-a', '-J', '-R', '-S', '--arg-file', '--delimiter', '--max-args', '--max-procs', '--max-lines', '--max-chars', '--process-slot-var'],
+  ionice: ['-c', '-n', '-p', '-P', '-u', '--class', '--classdata', '--pid', '--pgid', '--uid'],
+  chrt: ['-T', '-P', '-D', '--sched-runtime', '--sched-period', '--sched-deadline'],
+  strace: ['-o', '-e', '-p', '-s', '-u', '-E', '-P', '-a', '-I', '-b', '-O', '-S', '-X', '-U', '--output', '--trace', '--attach', '--string-limit', '--user', '--env'],
+  unbuffer: [],
+  builtin: [],
+  repeat: [],
+  noglob: [],
+  nocorrect: [],
+  coproc: [],
+}
+/** The words such a word takes before the command: `chrt` a priority, zsh's `repeat` a count, `flock` its lock file. */
+const WRAPPER_OPERANDS: Record<string, number> = { chrt: 1, repeat: 1, flock: 1 }
+/** The flags of such a word whose value is a command string for a shell. */
+const WRAPPER_STRINGS: Record<string, readonly string[]> = { flock: ['-c', '--command'] }
+/**
+ * Programs that only print what they read, whatever arguments they are handed, beyond the set of rule 5. They
+ * are asked about in one place: the template of `xargs` in text run on a configured host, where the arguments
+ * that are not in the text cannot make one of them more than a read. They are not in `READ_ONLY`, so rule 5
+ * is as it was.
+ */
+const TEMPLATE_READS = new Set('readlink realpath basename dirname md5sum sha1sum sha256sum sha512sum cksum'.split(' '))
+
 const SSH_VALUE = ['-o', '-i', '-p', '-l', '-F', '-J', '-E', '-L', '-R', '-D', '-b', '-c', '-m', '-S', '-W', '-w', '-B', '-e', '-I', '-O', '-Q', '-P']
 
 /** Whether a flag word takes the next word as its value: the flag itself, or a cluster of short flags that ends in one (`-tp 22`). */
@@ -2087,33 +2609,73 @@ type Command = {
   rest: Word[]
   /** The names assigned in front of the executable (`NAME=value command`). */
   assigned: string[]
+  /** Where the words of `WRAPPERS` are looked through too: one of them stood before the command. */
+  isWrapped?: boolean
+  /** Command strings such a word hands to a shell: the arguments of `watch`, the value of flock's `-c`. */
+  strings?: string[]
+  /** The command is the template of `xargs`, which runs it with arguments that are not in the text. */
+  isTemplate?: boolean
 }
 
-/** The executable of a segment after its assignments and prefixes, and the words after it. */
-function commandOf(words: readonly Word[]): Command {
+/** A table's own entry for a word (never one of the object's inherited names, such as `constructor`). */
+const ownOf = <T>(table: Record<string, T>, name: string): T | undefined => (Object.prototype.hasOwnProperty.call(table, name) ? table[name] : undefined)
+
+/**
+ * The executable of a segment after its assignments and prefixes, and the words after it. `isBehind`: the words
+ * of `WRAPPERS` are prefixes as well (the second reading of a segment, see there).
+ */
+function commandOf(words: readonly Word[], isBehind = false): Command {
   const assigned: string[] = []
+  const strings: string[] = []
+  let isWrapped = false
+  let isTemplate = false
+  let hasWatch = false
+  const done = (c: Command): Command => (isWrapped ? { ...c, isWrapped, strings, isTemplate } : c)
   let i = 0
   for (;;) {
     const w = words[i]
-    if (!w) return { exe: null, word: null, rest: [], assigned }
+    if (!w) return done({ exe: null, word: null, rest: [], assigned })
     if (isAssignment(w)) {
       assigned.push(/^[A-Za-z_][A-Za-z0-9_]*/.exec(w.raw)?.[0] ?? '')
       i++
       continue
     }
     const name = baseOf(w.v)
-    const values = Object.prototype.hasOwnProperty.call(PREFIXES, name) ? PREFIXES[name] : undefined
-    if (values === undefined) return { exe: name, word: w, rest: words.slice(i + 1), assigned }
+    const wrapper = isBehind ? ownOf(WRAPPERS, name) : undefined
+    const values = ownOf(PREFIXES, name) ?? wrapper
+    if (values === undefined) return done({ exe: name, word: w, rest: words.slice(i + 1), assigned })
+    const stringFlags = wrapper !== undefined ? (ownOf(WRAPPER_STRINGS, name) ?? []) : []
     i++
-    for (;;) {
-      const f = words[i]
-      if (!f || !f.v.startsWith('-') || f.v === '-') break
-      i++
-      if (f.v === '--') break
-      if (takesValue(f.v, values)) i++
+    const flags = (): void => {
+      for (;;) {
+        const f = words[i]
+        if (!f || !f.v.startsWith('-') || f.v === '-') break
+        i++
+        if (f.v === '--') break
+        if (stringFlags.includes(f.v)) strings.push(words[i++]?.v ?? '')
+        else if (takesValue(f.v, values)) i++
+      }
     }
+    flags()
     if (name === 'timeout') i++ // its duration
     if (name === 'function') i++ // the function's name
+    if (wrapper !== undefined) {
+      isWrapped = true
+      const operands = ownOf(WRAPPER_OPERANDS, name)
+      if (operands !== undefined) {
+        i += operands
+        // `flock file -c 'command'`: its flags may follow the lock file.
+        flags()
+      }
+      // `watch` hands its arguments to a shell: together they are a command text, like the string of `bash -c`.
+      // (Once for a segment: a second `watch` among those arguments is read when that text is.)
+      if (name === 'watch' && !hasWatch) {
+        hasWatch = true
+        strings.push(words.slice(i).map(x => x.v).join(' '))
+      }
+      // What follows the flags of `xargs` is its template; with none it only prints.
+      if (name === 'xargs') isTemplate = i < words.length
+    }
   }
 }
 
@@ -2407,6 +2969,8 @@ type Run = {
   isOldUncertain: boolean
   /** The configured host the raw command names, once it has been looked for. */
   named?: string | null
+  /** The further readings made so far for the earlier values of names with more than one (`alsoEarlier`). */
+  further: number
 }
 
 /** The first configured host the whole raw command names; looked for once, however many segments ask. */
@@ -2426,11 +2990,17 @@ type Ctx = {
   isOld: boolean
   /** The text is the piece of a segment before a cut (a pattern, a function's name), not a whole command. */
   isPart?: boolean
+  /** Inside a further reading of some text, made for an earlier value of a name (`alsoEarlier`): it only adds reasons. */
+  isFurther?: boolean
 }
 
-/** The text in hand cannot be read with certainty: the raw command decides as well (rule 7). */
+/**
+ * The text in hand cannot be read with certainty: the raw command decides as well (rule 7). The doubt of a
+ * reading that is made only to add holds (the earlier scanner's, a further one for an earlier value) adds the
+ * raw text's reasons and leaves the verdict's certainty as the other readings found it.
+ */
 function doubt(ctx: Ctx): void {
-  if (ctx.isOld) ctx.run.isOldUncertain = true
+  if (ctx.isOld || ctx.isFurther === true) ctx.run.isOldUncertain = true
   else ctx.run.isUncertain = true
 }
 type Stage = {
@@ -2518,7 +3088,7 @@ const stage = (reasons: Reason[], host: string | null, more: Partial<Stage> = {}
   ...more,
 })
 
-const unreadable = (match: string, host: string): Reason => ({ kind: 'unreadable', match: clean(match.trim(), MATCH_MAX), host })
+const unreadable = (match: string, host: string | null): Reason => ({ kind: 'unreadable', match: clean(match.trim(), MATCH_MAX), host })
 
 /** Rule 6: a segment that is neither read-only nor a shell reading text it was handed. */
 function otherSegment(full: string, hasSubst: boolean, host: string | null, cfg: HoldConfig, more: Partial<Stage> = {}): Stage {
@@ -2826,8 +3396,9 @@ function judge(seg: Seg, around: Around, ctx: Ctx): Stage {
   const cfg = ctx.run.cfg
   // Rule 6's host: the remote target this text sits under, else a host it names, else the host it feeds.
   const host = ctx.host ?? hostOf(fullOf(seg), cfg.hosts) ?? around.laterHost
-  const command = commandOf(seg.cut > 0 ? seg.words.slice(seg.cut) : seg.words)
-  const own = judgeOwn(seg, command, around, ctx, host)
+  const words = seg.cut > 0 ? seg.words.slice(seg.cut) : seg.words
+  const command = commandOf(words)
+  let own = judgeOwn(seg, command, around, ctx, host)
   const { exe, word, rest } = command
 
   const inner: Ctx = { ...ctx, depth: ctx.depth + 1 }
@@ -2861,6 +3432,39 @@ function judge(seg: Seg, around: Around, ctx: Ctx): Stage {
   // has read it. A weak value does not count as carried here: it never takes a hold away.
   if (ctx.remote !== null && word !== null && word.hasVar === true && (word.vx === undefined || word.isWeak === true) && isOnlyVariables(word.v)) {
     extra.push(unreadable(word.raw, ctx.remote))
+  }
+  // The second reading of a segment that starts with a word of `WRAPPERS` (`sshpass`, `flock`, `watch`, `xargs`
+  // and the like): the command behind the word is judged as well, and what it gives is added. The verdict
+  // above stands as it is, so this reading holds more and never less.
+  const behind = commandOf(words, true)
+  if (behind.isWrapped === true) {
+    const second = judgeOwn(seg, behind, around, ctx, host)
+    addAll(extra, second.reasons)
+    const strings = new Set<string>(behind.strings)
+    if (behind.exe === 'eval') strings.add(behind.rest.map(w => w.v).join(' '))
+    if (behind.exe === 'trap') strings.add(behind.rest.find(w => w.v === '-' || !w.v.startsWith('-'))?.v ?? '-')
+    for (const text of strings) {
+      if (text.trim() !== '' && text !== '-' && !texts.has(text)) addAll(extra, classifyText(text, inner).reasons)
+    }
+    const program = behind.word
+    if (ctx.remote !== null && program !== null && program.hasVar === true && (program.vx === undefined || program.isWeak === true) && isOnlyVariables(program.v)) {
+      extra.push(unreadable(program.raw, ctx.remote))
+    }
+    if (behind.isTemplate === true) {
+      // `xargs` runs its template with arguments that are not in the text. Handed to a remote shell they are
+      // the command on that host; handed to a command on a configured host that does more than read, they
+      // are part of it. Either way they are input that cannot be read. A template that only prints what it
+      // reads (rule 5's set, and `TEMPLATE_READS`) stays a read.
+      const isRemoteShell = behind.exe === 'ssh' || behind.exe === 'mosh'
+      const target = isRemoteShell ? hostOf(behind.rest.map(w => w.vx ?? w.v).join(' '), cfg.hosts) : null
+      if (target !== null) extra.push(unreadable(seg.raw, target))
+      else if (ctx.remote !== null && !second.isReadOnly && !(behind.exe !== null && TEMPLATE_READS.has(behind.exe))) {
+        extra.push(unreadable(seg.raw, ctx.remote))
+      }
+    }
+    // What the stages before it ask of this one: a shell behind the word reads its standard input like any other.
+    if (second.isBare && !second.isInterpreter && !own.isBare) own = { ...own, isBare: true, feeds: own.feeds ?? second.feeds }
+    if (own.host === null && second.host !== null) own = { ...own, host: second.host }
   }
   if (extra.length === 0 && isBeforeExempt) return own
   return { ...own, reasons: extra.length === 0 ? own.reasons : [...own.reasons, ...extra], isExempt: false, isReadOnly: false }
@@ -2896,6 +3500,17 @@ function untaken(text: string, cfg: HoldConfig, host: string | null): Reason[] {
 }
 
 /**
+ * What the whole raw command gives where the reader stopped short anywhere in it, or failed on it: what
+ * `untaken` gives, and a reason of kind `unreadable` whether or not it names a configured host (`host` is null
+ * where it names none). A command that was not read in full is held, whatever it says.
+ */
+function unread(raw: string, cfg: HoldConfig, host: string | null): Reason[] {
+  const reasons = untaken(raw, cfg, host)
+  if (host === null) reasons.push(unreadable(raw.slice(0, MATCH_MAX), null))
+  return reasons
+}
+
+/**
  * A text as a command of its own. Where a value was carried forward into it
  * (rule 2a) it is read twice, with the values in place and as written, and
  * the two readings are joined: every reason of either holds, and a segment
@@ -2919,6 +3534,7 @@ function classifyText(text: string, ctx: Ctx): Out {
   if (isPart) ctx = { ...ctx, isPart: false }
   const sc = scan(text, !ctx.isPlain, false, isPart)
   let out = readScan(sc, ctx, text)
+  if (sc.earlier.length > 0 && ctx.isFurther !== true) out = alsoEarlier(out, sc.earlier, text, ctx, isPart)
   if (sc.isOpaque) {
     // Shells read a piece of this text in different ways: it counts like a text too deep to take apart.
     stopShort()
@@ -2934,6 +3550,33 @@ function classifyText(text: string, ctx: Ctx): Out {
     return out
   }
   return bothOf(out, readScan(scan(text, !ctx.isPlain, true, isPart), { ...ctx, isOld: true }, text))
+}
+
+/** One command makes at most this many further readings for earlier values of its names; past it the reader stops short. */
+const MAX_FURTHER = 8
+
+/**
+ * A name with more than one literal value. The reading above has the value written last before each use in
+ * place, as before. Here the text is read once more for each earlier value that a later one replaced before
+ * a use of the name, with that value kept in place from its assignment on (`Pin`), and the reasons of those
+ * readings are added: the shell may have skipped the later assignment (`[ -n "$SIM" ] && DEV=/tmp/sim.txt`).
+ * Such a reading only adds reasons. It exempts nothing, makes no target certain and takes no reason away, and
+ * its own doubt leaves the verdict's certainty alone (`doubt`). The texts inside it are read as they are
+ * (no further readings of their own).
+ */
+function alsoEarlier(out: Out, earlier: readonly Pin[], text: string, ctx: Ctx, isPart: boolean): Out {
+  const run = ctx.run
+  const reasons = out.reasons.slice()
+  for (const pin of earlier) {
+    run.work += text.length
+    if (run.further >= MAX_FURTHER || run.work > WORK_MAX) {
+      stopShort()
+      break
+    }
+    run.further++
+    addAll(reasons, judgeAll(scan(text, true, false, isPart, pin), { ...ctx, isFurther: true }).reasons)
+  }
+  return { ...out, reasons }
 }
 
 /** One scan of `text` judged: with the values of rule 2a in place and, where any was carried, as written too. */
@@ -3061,10 +3704,13 @@ export function classify(command: string, read: ConfigRead): Verdict {
     // A read that is none of the three is treated as broken.
     isBroken = status !== 'ok' && status !== 'none'
     cfg = status === 'ok' && read.status === 'ok' ? read.config : EMPTY
-    const run: Run = { cfg, raw, isUncertain: raw.length > MAX_PARSE, twins: new Set(), seen: null, work: 0, isOldUncertain: false }
+    const run: Run = { cfg, raw, isUncertain: raw.length > MAX_PARSE, twins: new Set(), seen: null, work: 0, isOldUncertain: false, further: 0 }
     reading.isShort = false
+    reading.stops = 0
+    reading.long.clear()
     reading.steps = STEPS_FLAT
     noteText('')
+    forgetClosed()
     // Too long to take apart: a limit of the reader, and nothing of the command is read.
     if (run.isUncertain) stopShort()
     const out: Out = run.isUncertain
@@ -3074,20 +3720,19 @@ export function classify(command: string, read: ConfigRead): Verdict {
     const isDoubted = run.isUncertain || run.isOldUncertain
     const reasons = [...(isBroken ? brokenReasons(raw) : []), ...out.reasons, ...(isDoubted ? everyClass(raw, cfg, namedIn(run)) : [])]
     // The one place a limit of the reader is acted on, whichever it was and wherever it was reached:
-    // the whole raw command is decided like a text that cannot be taken apart. Every pattern is tried
-    // on it, and a command that names a configured host (in its text, or through a value a stage was
-    // read with) is held as input that cannot be read. The reasons found so far are kept.
-    if (reading.isShort) addAll(reasons, untaken(raw, cfg, namedIn(run) ?? run.seen))
+    // the command was not read in full, so it is held as input that cannot be read, whatever it names
+    // (`unread`). The host is the configured one it names, in its text or through a value a stage was
+    // read with, when it names one. The reasons found so far are kept.
+    if (!reading.isShort && namesLong(raw)) stopShort()
+    if (reading.isShort) addAll(reasons, unread(raw, cfg, namedIn(run) ?? run.seen))
     if (reasons.length > 0) return held(reasons, !run.isUncertain && !reading.isShort)
     if (out.isStop) return { hold: false, why: 'stop' }
     if (out.total > 0 && out.exempt === out.total) return { hold: false, why: 'read-only' }
     return { hold: false, why: 'no-match' }
   } catch {
-    // An internal error is a text that could not be taken apart: the raw text decides, and one that
-    // names a configured host is held, as for a text too long or too deep (rule 7).
+    // An internal error is a command that was not read in full: it is held the same way, whatever it names.
     try {
-      const reasons = [...(isBroken ? brokenReasons(raw) : []), ...untaken(raw, cfg, hostOf(raw, cfg.hosts))]
-      return reasons.length > 0 ? held(reasons, false) : { hold: false, why: 'no-match' }
+      return held([...(isBroken ? brokenReasons(raw) : []), ...unread(raw, cfg, hostOf(raw, cfg.hosts))], false)
     } catch {
       return {
         hold: true,

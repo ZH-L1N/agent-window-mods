@@ -3150,17 +3150,18 @@ edit the file is under `Touched this turn` and carries `M`.
   round with a stop rule (see "Task 5, third correction"). Its one check
   confirmed no high finding, so both phases landed the same day, and the
   notes that said motion-hold was "not in this repo yet" are gone.
-- TEMP(2026-11-16, until: motion-hold 0.1.1):
-  nine findings of the matcher's last check stay open (no high; four medium,
-  five low), all in `motion-hold/hooks/match.ts` and all listed in the mod's
-  README under "Found by the last review and not fixed yet". An assignment
-  that opens a group behind `time -p` is not read as one. The step budget
-  gives up at 14 levels of a single quote nested in `${...}`. Values newly
-  carried as weak spend the room for carried values. Under a limit with no
-  configured host named, a hold put together from a carried value passes.
-  More spellings hide a later signal option after signal 0.
-  A `${ command; }` nested in another `${...}` is not read. Some very long
-  commands take quadratic time and are then refused.
+- Closed 2026-11-17 by motion-hold 0.1.1
+  (`plans/2026-11-16-motion-hold-0.1.1.md`): the nine findings that the
+  matcher's last check left open in 0.1.0 (no high; four medium, five low)
+  are fixed there, each pinned by a test, but for two spellings after
+  signal 0 that the mod's README lists. They were: an assignment that
+  opens a group behind `time -p`; the step budget that gave up at 14
+  levels of a single quote nested in `${...}`; the room that values newly
+  carried as weak spent; a hold put together from a carried value that
+  passed under a limit with no configured host named; more spellings that
+  hid a later signal option after signal 0; a `${ command; }` nested in
+  another `${...}`; and very long commands that took quadratic time. What
+  the check of 0.1.1 left in turn is marked in that plan.
 - TEMP(2026-11-16, until: queue 0.1.1): two low findings of the queue's last
   check stay open. A `/q clear`, or any other act that empties the queue,
   that lands while the automatic take's state write is in flight brings the
