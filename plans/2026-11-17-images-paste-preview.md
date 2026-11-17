@@ -167,3 +167,4 @@ preview; lighter chips or other looks.
 
 | Step | Commit | Note |
 | --- | --- | --- |
+| images 0.4.0 | 3855dd6 | Landed 2026-11-17 15:01, pushed and installed (0.3.0 to 0.4.0). 141 tests. Three review lenses, two fix rounds, each re-checked; tried live by the owner in a new session. |
