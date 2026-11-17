@@ -121,7 +121,7 @@
     {
       "name": "images",
       "source": "./images",
-      "description": "After a prompt is sent, each pasted [Image #n] is drawn as a half-block thumbnail (macOS sips turns the engine's PNG into a small BMP): in an IMAGES band above the prompt, cleared on the next prompt, and in a small labelled row placed in the transcript under the prompt that carried the images. Options size 12 | 16 | 24 | 32 columns, auto on | off, linger turn | 2min | until-cleared, under on | off; /img [<n> | on | off | clear | under on|off].",
+      "description": "Each pasted [Image #n] shown as a thumbnail in an IMAGES band above the prompt: before you send, as soon as the tag appears in the prompt box (macOS osascript writes the clipboard's picture to a PNG; caption 'not sent yet'), and after you send, from the engine's own PNG; also in a small labelled row placed in the transcript under the sent prompt. Drawn as true pictures (the terminal reads a small PNG sips makes) where the terminal can, half-blocks otherwise. /img shows the last tiles again, /img <n> draws one image of this session, /img on | off | clear, /img under on | off, /img preview on | off, /img draw auto | picture | blocks.",
       "author": {
         "name": "Zehui Lin"
       },

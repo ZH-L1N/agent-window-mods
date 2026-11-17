@@ -51,6 +51,14 @@ the strip's and every other mod's, are drawn on one background colour, so
 it is plain where the conversation ends: one wrapper in the strip's list
 hook, default `moss`, `/strip band <shade | #rrggbb | off>`.
 
+## Done (2026-11-17): images 0.4.0
+
+Plan `plans/2026-11-17-images-paste-preview.md`. A pasted image shows
+above the prompt before the prompt is sent (its picture is read from the
+macOS clipboard when its tag appears in the box), and tiles are true
+pictures where the terminal can draw them, half-blocks otherwise.
+`/img preview on | off`, `/img draw auto | picture | blocks`.
+
 ## Next, in order
 
 1. **motion-hold 0.1.2:** what the check of 0.1.1 left, each with a test

@@ -19,33 +19,81 @@
 // /img off and the auto option reach the band only: with them off
 // and `under` on, the tiles are built for the row alone. A run that ends or is
 // stopped marks its row done. A /clear or resume forgets rows and thumbnails.
+//
+// Before sending (0.4.0): `prompt.edit` and `prompt.change` are observed
+// (`next(e)` first, its answer returned unchanged). The box's tags are compared
+// in memory at once; a tag that was not there before, from a change that may
+// be a paste (a prompt.edit with no key; a prompt.change from any origin but
+// history, undo, plugin, clear and app), takes a ticket, and from a $.clock
+// timer each new tag in turn has its picture read from the clipboard
+// (pipeline.ts) into $.state `images.pending`, shown in the same row. Not read:
+// a new tag at or below the highest tag seen in this conversation (a draft the
+// engine put back; only a change that may be a paste and a sent prompt raise
+// it), the new tags of a keyless edit that inserts text of its own, and those
+// an engine write brings within 2 seconds after a keyless edit whose inserted
+// text looks like a file path (a dragged file, a pasted path). A tag that
+// leaves the box loses its tile; an empty box, a sent prompt, /img clear and
+// /img preview off drop them all.
+// Option `preview` and /img preview on|off (kept in the store); off, the
+// clipboard is never read.
+//
+// True pictures (0.4.0): option `draw` and /img draw auto|picture|blocks (kept
+// in the store), resolved into $.state `images.pictures`; `auto` reads
+// CLAUDE_CODE_FORCE_TERMINAL_IMAGES and TERM_PROGRAM once, at session.start.
+// With pictures on each tile built also gets a small PNG, a file of its own
+// per build; a picture file is emptied once no tile, thumbnail or tile of the
+// box holds it, every one the mod holds at any session end, and a killed
+// session's at a later session's start, once the files are a day old and a day
+// has passed since its last sign of life (`<session>.alive`, written at the
+// start and every hour; the plugin API has no delete). With two builds of one
+// tag at once, a tile older than the newest already written for its tag is
+// not written: its file is released.
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, PluginOptions, PromptSubmitInput, Register, Timer } from 'claude-code'
 
 import type { ImageTile } from '../types'
 import {
+  ALIVE_EVERY_MS,
   COMMAND,
   DELAY_MS,
   LINGER_MS,
   PLACE_PREFIX,
   STORE_BAND,
+  STORE_DRAW,
+  STORE_PREVIEW,
   STORE_UNDER,
   USAGE,
+  canDrawPictures,
   captionOf,
+  PATH_INSERT_WINDOW_MS,
+  drawModeOf,
+  filesOf,
   isAutoOn,
+  freshTags,
+  isPathInsert,
+  isPictures,
+  isPreviewOn,
+  isTextInsert,
   isUnderOn,
   lingerOf,
+  mayBePaste,
   parseArgs,
+  pastedTags,
+  prePngPathOf,
+  sameTags,
   sizeOf,
   tagText,
   tagsOf,
   thumbOf,
+  unheldOf,
   withDone,
   withPlaced,
   withThumb,
   withTile,
 } from './kit'
-import { buildTile, pipelineOf } from './pipeline'
+import type { DrawMode } from './kit'
+import { buildTile, markAlive, pipelineOf, staleFiles, tileFromClipboard } from './pipeline'
+import type { Pipeline } from './pipeline'
 import { drawRow } from './row'
 import { onPlaced } from './under'
 
@@ -55,6 +103,10 @@ const band = atom({ plugin: 'images', key: 'band' } as const, '')
 const under = atom({ plugin: 'images', key: 'under' } as const, '')
 const placed = atom({ plugin: 'images', key: 'placed' } as const, {})
 const thumbs = atom({ plugin: 'images', key: 'thumbs' } as const, {})
+const boxTiles = atom({ plugin: 'images', key: 'pending' } as const, [])
+const preview = atom({ plugin: 'images', key: 'preview' } as const, '')
+const draw = atom({ plugin: 'images', key: 'draw' } as const, '')
+const pictures = atom({ plugin: 'images', key: 'pictures' } as const, false)
 
 /** A sent prompt's tags and who wants them: the band above the prompt, the row under it. */
 type Batch = { tags: number[]; band: boolean; under: boolean }
@@ -75,6 +127,45 @@ let rowCount = 0
 let generation = 0
 // linger=2min: the timer that clears the row.
 let lingerTimer: Timer | null = null
+// The tags the prompt box held at the last change seen, kept here so a hook
+// compares them at once with no await.
+let boxTags: number[] = []
+// Bumped when the box empties, a prompt is sent, /img clear, /img preview off
+// and a session change: a clipboard run started under an older value writes no tile.
+let pasteGen = 0
+// Bumped for each new tag a possible paste brings, in the order seen: the
+// clipboard holds only the latest picture, so a tag whose ticket is no longer
+// the newest gets a note instead of the clipboard's picture.
+let pasteTicket = 0
+// The clipboard runs, one after another.
+let chain: Promise<void> = Promise.resolve()
+// What the environment said at session.start: the terminal can draw true pictures.
+let canPicture = false
+// The highest tag seen in this conversation: raised by the new tags of a
+// change that may be a paste (a keyless edit, a write from an origin that may
+// be one) and by a sent prompt's tags; never by a history recall, an undo, a
+// plugin's fill, a clear, the app's write or an edit made with a key. The
+// engine numbers pasted images upward: a new tag not above it was put back (a
+// queued prompt pulled back, a prompt put back after an interrupt, a stash
+// restored), not pasted, so the clipboard is not read for it.
+let highTag = 0
+// True for PATH_INSERT_WINDOW_MS after a keyless edit inserted text that looks
+// like a file path (a dragged file, a pasted path): a new tag an engine write
+// brings meanwhile is that path's, not the clipboard's.
+let isAfterPathInsert = false
+let pathInsertTimer: Timer | null = null
+// The sign of life (`<session>.alive`) written every hour. A module variable:
+// a reload drops it with the module; session.start starts it, and a session.end
+// that ends the process's work stops it. A /clear or an in-process resume keeps
+// it going: the process goes on under a new session id, no session.start fires
+// for it, and the timer reads the id each time it writes.
+let aliveTimer: Timer | null = null
+// The newest content number (a small PNG's `gen`) written into the state for
+// each tag, one record for the band's tiles and the thumbnails together: a
+// build older than it that comes later is written to neither (its file is
+// released), so no tile or thumbnail ever holds a file that a newer build's
+// release already emptied, also when the newer build wrote only one of the two.
+const newestBuild = new Map<number, number>()
 
 const whyOf = (err: unknown): string => (err instanceof Error ? err.message : String(err))
 
@@ -101,18 +192,222 @@ async function show($: EngineInterface, options: PluginOptions): Promise<void> {
   }
 }
 
-/** A built tile into the state: a hidden row's tiles are replaced, a shown row's added to (at most 6, newest last). */
-async function addTile($: EngineInterface, tile: ImageTile, options: PluginOptions): Promise<void> {
-  const isShown = await read($, shown)
-  await update($, tiles, list => (isShown ? withTile(list, tile) : [tile]))
-  if (!isShown) await show($, options)
+/** A conversation starts or ends: no tag seen yet, no path insertion pending, no build written. */
+function forgetTags(): void {
+  highTag = 0
+  pathInsertTimer?.cancel()
+  pathInsertTimer = null
+  isAfterPathInsert = false
+  newestBuild.clear()
 }
 
-/** A built tile, drawn small, kept for the rows under the sent prompts. */
-async function keepThumb($: EngineInterface, tile: ImageTile): Promise<void> {
-  const small = thumbOf(tile)
-  await update($, thumbs, all => withThumb(all, small))
+/** Tags a change that may be a paste brought, or a sent prompt's, raise the highest. */
+const noteTags = (tags: readonly number[]): void => {
+  for (const n of tags) if (n > highTag) highTag = n
 }
+
+/** A keyless edit inserted what looks like a file path: engine writes for the next 2 seconds (the session's clock) are not pastes. */
+function markPathInsert($: EngineInterface): void {
+  pathInsertTimer?.cancel()
+  isAfterPathInsert = true
+  pathInsertTimer = $.clock.after(PATH_INSERT_WINDOW_MS, () => {
+    pathInsertTimer = null
+    isAfterPathInsert = false
+  })
+}
+
+/** The hourly sign of life stops (a session.end other than a /clear or a resume); a reload drops it with the module. */
+function stopAlive(): void {
+  aliveTimer?.cancel()
+  aliveTimer = null
+}
+
+/** The hourly sign of life starts (session.start), one timer at most. */
+function startAlive($: EngineInterface): void {
+  stopAlive()
+  aliveTimer = $.clock.every(ALIVE_EVERY_MS, () => {
+    void markAlive($).catch(() => {})
+  })
+}
+
+/**
+ * Whether `tile` is older than the newest build already written for its tag
+ * in `newest`; when it is not, it becomes the newest. Asked inside the state's
+ * updater, so the check and the write go together. A tile with no content
+ * number (half-blocks) is always written.
+ */
+function isOlderBuild(newest: Map<number, number>, tile: ImageTile): boolean {
+  if (typeof tile.gen !== 'number') return false
+  const seen = newest.get(tile.n)
+  if (seen !== undefined && tile.gen < seen) return true
+  newest.set(tile.n, tile.gen)
+  return false
+}
+
+/** The small PNGs `before` held that `after` no longer holds. */
+const goneFiles = (before: readonly ImageTile[], after: readonly ImageTile[]): string[] => {
+  const kept = filesOf(after)
+  return filesOf(before).filter(f => !kept.includes(f))
+}
+
+/**
+ * Each of `candidates` that no tile, thumbnail or tile of the box holds any
+ * more is emptied (the plugin API has no delete).
+ */
+async function release($: EngineInterface, candidates: readonly string[]): Promise<void> {
+  if (candidates.length === 0) return
+  const held = await heldFiles($)
+  for (const file of unheldOf(candidates, held)) await $.fs.write(file, '').catch(() => {})
+}
+
+/** Every picture file a tile, a thumbnail or a tile of the box holds. */
+async function heldFiles($: EngineInterface): Promise<string[]> {
+  return filesOf([...(await read($, tiles)), ...Object.values(await read($, thumbs)), ...(await read($, boxTiles))])
+}
+
+/**
+ * A built tile into the state: a hidden row's tiles are replaced, a shown
+ * row's added to (at most 6, newest last). False when it was not written (a
+ * newer build of its tag came first): its file is then the caller's stray.
+ */
+async function addTile($: EngineInterface, tile: ImageTile, options: PluginOptions): Promise<boolean> {
+  const isShown = await read($, shown)
+  let gone: string[] = []
+  let isWritten = false
+  await update($, tiles, list => {
+    gone = []
+    isWritten = !isOlderBuild(newestBuild, tile)
+    if (!isWritten) return list
+    const next = isShown ? withTile(list, tile) : [tile]
+    gone = goneFiles(list, next)
+    return next
+  })
+  if (!isWritten) return false
+  if (!isShown) await show($, options)
+  await release($, gone)
+  return true
+}
+
+/** A built tile, drawn small, kept for the rows under the sent prompts; false, as addTile, when a newer build of its tag came first. */
+async function keepThumb($: EngineInterface, tile: ImageTile): Promise<boolean> {
+  const small = thumbOf(tile)
+  let gone: string[] = []
+  let isWritten = false
+  await update($, thumbs, all => {
+    gone = []
+    isWritten = !isOlderBuild(newestBuild, small)
+    if (!isWritten) return all
+    const next = withThumb(all, small)
+    gone = goneFiles(Object.values(all), Object.values(next))
+    return next
+  })
+  if (!isWritten) return false
+  await release($, gone)
+  return true
+}
+
+/** Whether tiles built now get a small PNG for true pictures. */
+const isPicturesNow = async ($: EngineInterface): Promise<boolean> => (await read($, pictures)) === true
+
+// --- before you send
+
+/** A new tag and the ticket it was given when seen. */
+type Fresh = { n: number; ticket: number }
+
+/** The box's tiles whose tag `keep` refuses are dropped, their small PNGs released. */
+async function dropBoxTiles($: EngineInterface, keep: (n: number) => boolean = () => false): Promise<void> {
+  const list = await read($, boxTiles)
+  if (list.length === 0 || list.every(t => keep(t.n))) return
+  let gone: string[] = []
+  await update($, boxTiles, all => {
+    const next = all.filter(t => keep(t.n))
+    gone = goneFiles(all, next)
+    return next
+  })
+  await release($, gone)
+}
+
+/**
+ * One new tag: its picture from the clipboard, unless the box moved on
+ * meanwhile (asked again inside the state's updater, so a send or the tag's
+ * removal in between writes no tile). Whatever the run wrote that no tile
+ * keeps is released.
+ */
+async function grab($: EngineInterface, f: Fresh, gen: number, options: PluginOptions): Promise<void> {
+  const isLive = () => gen === pasteGen && boxTags.includes(f.n)
+  if (!isLive()) return
+  const p = await pipelineOf($, isLive, await isPicturesNow($))
+  try {
+    // osascript writes over the tag's PNG: never while a tile holds it.
+    if (p.home && (await heldFiles($)).includes(prePngPathOf(p.home, p.fileId, f.n))) return
+    const tile = await tileFromClipboard($, f.n, sizeOf(options.size), p, () => f.ticket === pasteTicket)
+    if (tile === null) return
+    let isWritten = false
+    let gone: string[] = []
+    await update($, boxTiles, list => {
+      isWritten = isLive()
+      gone = []
+      if (!isWritten) return list
+      const next = withTile(list, tile)
+      gone = goneFiles(list, next)
+      return next
+    })
+    if (!isWritten && tile.file) p.strays.push(tile.file)
+    await release($, gone)
+  } finally {
+    await release($, p.strays).catch(() => {})
+  }
+}
+
+/** From the timer: the box's tiles follow its tags, and each new tag is queued for the clipboard (preview on only). */
+async function settleBox($: EngineInterface, fresh: readonly Fresh[], gen: number, options: PluginOptions): Promise<void> {
+  // The box as it stands when the timer runs (a later change may have come since).
+  await dropBoxTiles($, n => boxTags.includes(n))
+  if (fresh.length === 0 || !isPreviewOn(await read($, preview), options.preview)) return
+  for (const f of fresh) {
+    chain = chain.then(() => grab($, f, gen, options)).catch(() => {})
+  }
+}
+
+/**
+ * The box as it stands after a change: its tags compared with the last ones in
+ * memory and, when they changed, the work handed to a timer. Tickets are taken
+ * here, at once, so they follow the order the tags appeared in.
+ */
+function observe($: EngineInterface, text: string, isPaste: boolean, mayRaise: boolean, options: PluginOptions): void {
+  const now = tagsOf(text)
+  if (sameTags(now, boxTags)) return
+  const before = boxTags
+  boxTags = now
+  if (now.length === 0) pasteGen++
+  // Only tags above the highest seen so far are pasted.
+  const fresh: Fresh[] = isPaste ? pastedTags(before, now, highTag).map(n => ({ n, ticket: ++pasteTicket })) : []
+  // The new tags of a change that may be a paste count as seen (even when not
+  // read, as a path's); a recall, an undo, a fill, a clear, the app's write or
+  // an edit with a key leaves the highest as it was.
+  if (mayRaise) noteTags(freshTags(before, now))
+  const gen = pasteGen
+  $.clock.after(DELAY_MS, () => {
+    void settleBox($, fresh, gen, options).catch(() => {})
+  })
+}
+
+/** The box was sent: any clipboard run stops, and its tiles are dropped from a timer. */
+function forgetBox($: EngineInterface): void {
+  pasteGen++
+  boxTags = []
+  $.clock.after(DELAY_MS, () => {
+    void dropBoxTiles($).catch(() => {})
+  })
+}
+
+/** The words for a draw mode, as /img draw answers. */
+const drawWords = (mode: DrawMode): string =>
+  mode === 'picture'
+    ? 'true pictures (a tile with no small PNG stays in half-blocks)'
+    : mode === 'blocks'
+      ? 'half-blocks'
+      : `auto: ${canPicture ? 'true pictures' : 'half-blocks'} in this terminal`
 
 /** This load's stamp: set at session.start, or read here at first use. */
 async function stampOf($: EngineInterface): Promise<string> {
@@ -155,20 +450,28 @@ async function markDone($: EngineInterface, row: Row): Promise<void> {
 async function runBatch($: EngineInterface, batch: Batch, options: PluginOptions, waitingRow?: Row): Promise<void> {
   const mine = ++generation
   let row = waitingRow ?? null
+  let p: Pipeline | null = null
   try {
     if (batch.under && row === null) {
       row = await newRow($, batch.tags)
       await placeRow($, row)
     }
-    const p = await pipelineOf($, () => mine === generation)
+    p = await pipelineOf($, () => mine === generation, await isPicturesNow($))
     for (const n of batch.tags) {
       const tile = await buildTile($, n, sizeOf(options.size), p)
-      if (tile === null || mine !== generation) return
-      if (batch.under) await keepThumb($, tile)
-      if (batch.band) await addTile($, tile, options)
+      if (tile === null) return
+      if (mine !== generation) {
+        if (tile.file) p.strays.push(tile.file)
+        return
+      }
+      // A tile a newer build of its tag beat into the state: its file is a stray.
+      const isThumbKept = batch.under && (await keepThumb($, tile))
+      const isTileKept = batch.band && (await addTile($, tile, options))
+      if (!isThumbKept && !isTileKept && tile.file) p.strays.push(tile.file)
     }
   } finally {
     if (row !== null) await markDone($, row).catch(() => {})
+    if (p !== null) await release($, p.strays).catch(() => {})
   }
 }
 
@@ -206,25 +509,39 @@ function placeWaiting($: EngineInterface, options: PluginOptions): void {
 /** /img <n>: that image of this session; a toast when only its tag could be drawn. */
 async function runOne($: EngineInterface, n: number, options: PluginOptions): Promise<void> {
   const mine = generation
-  const p = await pipelineOf($, () => mine === generation)
-  const tile = await buildTile($, n, sizeOf(options.size), p)
-  if (tile === null || mine !== generation) return
-  await keepThumb($, tile)
-  await addTile($, tile, options)
+  const p = await pipelineOf($, () => mine === generation, await isPicturesNow($))
+  let tile: ImageTile | null = null
+  try {
+    tile = await buildTile($, n, sizeOf(options.size), p)
+    if (tile === null) return
+    if (mine !== generation) {
+      if (tile.file) p.strays.push(tile.file)
+      return
+    }
+    const isThumbKept = await keepThumb($, tile)
+    const isTileKept = await addTile($, tile, options)
+    if (!isThumbKept && !isTileKept && tile.file) p.strays.push(tile.file)
+  } finally {
+    await release($, p.strays).catch(() => {})
+  }
   if (!tile.cells) await $.ui.toast(`${tagText(n)}: no thumbnail (not in this session's images folder, or no sips) (/${COMMAND} ${n})`)
 }
 
-/** /img clear and the clear button: no tiles, no row, any run stopped. */
+/** /img clear and the clear button: no tiles (the box's too), no row, any run stopped; small PNGs no thumbnail holds are emptied. */
 async function clearAll($: EngineInterface): Promise<void> {
   generation++
+  pasteGen++
   pending = null
   stopLinger()
+  const gone = filesOf(await read($, tiles))
   await update($, tiles, () => [])
   await update($, shown, () => false)
+  await release($, gone)
+  await dropBoxTiles($)
 }
 
-/** Writes /img on|off (or /img under on|off) to the store; the words to add to the reply when it could not be kept. */
-async function persist($: EngineInterface, value: 'on' | 'off', key: string = STORE_BAND): Promise<string> {
+/** Writes a switch (/img on|off, under, preview, draw) to the store; the words to add to the reply when it could not be kept. */
+async function persist($: EngineInterface, value: string, key: string = STORE_BAND): Promise<string> {
   try {
     await $.store.set(key, value)
     return ''
@@ -242,7 +559,21 @@ export const register: Register = (on, options: PluginOptions) => {
     const started = await next(e)
     pending = null
     generation++
+    pasteGen++
+    boxTags = []
+    forgetTags()
     stopLinger()
+    // This session's sign of life now and every hour; then a killed session's
+    // picture files, once a day old with no sign of life within the day, are
+    // emptied (never one this session holds).
+    startAlive($)
+    $.clock.after(DELAY_MS, () => {
+      void markAlive($)
+        .catch(() => {})
+        .then(() => staleFiles($))
+        .then(files => release($, files))
+        .catch(() => {})
+    })
     try {
       stamp = Math.floor(await $.clock.now()).toString(36)
     } catch {
@@ -250,8 +581,9 @@ export const register: Register = (on, options: PluginOptions) => {
     }
     await $.command.register({
       name: 'img',
-      description: 'IMAGES row: show the last image tiles again, draw [Image #n] of this session, turn the automatic tiles on or off, clear them, or turn the thumbnails under the sent prompt on or off',
-      argumentHint: '<n> | on | off | clear | under on | under off',
+      description:
+        'IMAGES row: show the last image tiles again, draw [Image #n] of this session, turn the automatic tiles on or off, clear them, turn the thumbnails under the sent prompt or the preview before sending on or off, or choose true pictures or half-blocks',
+      argumentHint: '<n> | on | off | clear | under on | under off | preview on | preview off | draw auto | draw picture | draw blocks',
     })
     try {
       const stored = await $.store.get(STORE_BAND)
@@ -265,14 +597,85 @@ export const register: Register = (on, options: PluginOptions) => {
     } catch {
       // No store: the under option applies.
     }
+    try {
+      const stored = await $.store.get(STORE_PREVIEW)
+      await update($, preview, () => (stored === 'on' || stored === 'off' ? stored : ''))
+    } catch {
+      // No store: the preview option applies.
+    }
+    // Whether the terminal can draw true pictures, read once: unset or unreadable is no.
+    try {
+      const [force, term] = await Promise.all([$.env.get('CLAUDE_CODE_FORCE_TERMINAL_IMAGES'), $.env.get('TERM_PROGRAM')])
+      canPicture = canDrawPictures(force, term)
+    } catch {
+      canPicture = false
+    }
+    let storedDraw: '' | DrawMode = ''
+    try {
+      const value = await $.store.get(STORE_DRAW)
+      storedDraw = value === 'auto' || value === 'picture' || value === 'blocks' ? value : ''
+    } catch {
+      // No store: the draw option applies.
+    }
+    try {
+      const kept = storedDraw
+      await update($, draw, () => kept)
+      await update($, pictures, () => isPictures(drawModeOf(kept, options.draw), canPicture))
+      // A reload forgets the box's tags, so its tiles go too.
+      await dropBoxTiles($)
+    } catch {
+      // Half-blocks; the box's tiles go at its next change.
+    }
     return started
   })
+
+  // A write to the prompt box no prompt.edit carried (history, clear, a plugin's fill, the engine's).
+  on('prompt.change', async ($, e, next) => {
+    const r = await next(e)
+    try {
+      const kind = typeof e.origin?.kind === 'string' ? e.origin.kind : 'engine'
+      // Right after a dragged file or a pasted path, the engine's write of its tag is not a paste.
+      observe($, e.text, mayBePaste(kind) && !isAfterPathInsert, mayBePaste(kind), options)
+    } catch {
+      // Observe only.
+    }
+    return r
+  }).catch(($, e, next) => (next.called ? undefined : next(e)))
+
+  // An edit of the person's: a paste or a burst has no key, and only those may
+  // read the clipboard; not one that inserts text of its own, whose tags are
+  // that text's. Only text that looks like a file path (a dragged file, a
+  // pasted path) opens the 2 seconds in which an engine write is not a paste.
+  on('prompt.edit', async ($, e, next) => {
+    const r = await next(e)
+    try {
+      const isKeyless = e.key === undefined
+      if (isKeyless && isPathInsert(e.inputText)) markPathInsert($)
+      const isText = isKeyless && isTextInsert(e.inputText)
+      if (r && typeof r.text === 'string') observe($, r.text, isKeyless && !isText, isKeyless, options)
+    } catch {
+      // Observe only.
+    }
+    return r
+  }).catch(($, e, next) => (next.called ? undefined : next(e)))
 
   // A sent prompt clears the row (unless linger=until-cleared) and leaves its
   // tags for its turn. Done before next: the main loop's turn.start runs inside it.
   // The band's switches (/img off, auto) and `under` are each asked on their own.
   on('prompt.submit', async ($, e, next) => {
     let mine: Batch | null = null
+    try {
+      // A sent prompt's tags count as seen: a draft that brings them back is no paste.
+      noteTags(tagsOf(e.text))
+    } catch {
+      // Nothing seen.
+    }
+    try {
+      // The box's images are sent (or the box is taken by a command): its tiles go.
+      if (e.origin?.kind === 'composer') forgetBox($)
+    } catch {
+      // The tiles go at the box's next change.
+    }
     try {
       if (isPersonPrompt(e)) {
         generation++
@@ -346,17 +749,41 @@ export const register: Register = (on, options: PluginOptions) => {
     return ended
   }).catch(($, e, next) => next(e))
 
-  // A /clear or an in-process resume puts another conversation in this process.
+  // Every session end empties every picture file the mod holds; a /clear or an
+  // in-process resume (another conversation in this process) also forgets the
+  // tiles, rows and thumbnails, and the tags seen.
   on('session.end', async ($, e, next) => {
     const result = await next(e)
+    // Runs in flight write no tile.
+    generation++
+    pasteGen++
     if (e.reason === 'clear' || e.reason === 'resume') {
+      // The process goes on under a new session id and no session.start fires
+      // for it: the hourly sign of life keeps running (the id is read at each
+      // write), and the new id gets its file at once, from a timer.
+      if (aliveTimer === null) startAlive($)
+      $.clock.after(DELAY_MS, () => {
+        void markAlive($).catch(() => {})
+      })
       waiting = []
+      boxTags = []
+      forgetTags()
       try {
+        const all = await heldFiles($)
         await clearAll($)
         await update($, placed, () => ({}))
         await update($, thumbs, () => ({}))
+        await release($, all)
       } catch {
         // Nothing more to do.
+      }
+    } else {
+      // No more signs of life until the next start.
+      stopAlive()
+      try {
+        for (const file of await heldFiles($)) await $.fs.write(file, '').catch(() => {})
+      } catch {
+        // Left for a later session's sweep, once a day old and a day past this session's last sign of life.
       }
     }
     return result
@@ -402,6 +829,21 @@ export const register: Register = (on, options: PluginOptions) => {
             ? { text: `Image thumbnails under the sent prompt on: a sent prompt's images are drawn under it in the transcript.${await persist($, 'on', STORE_UNDER)}` }
             : { text: `Image thumbnails under the sent prompt off: /${COMMAND} under on turns them on again.${await persist($, 'off', STORE_UNDER)}` }
         }
+        case 'preview': {
+          const value = asked.value
+          await update($, preview, () => value)
+          if (value === 'on') return { text: `Image preview on: a pasted image is shown above the prompt before you send it.${await persist($, 'on', STORE_PREVIEW)}` }
+          // A clipboard run in flight writes nothing; the box's tiles go.
+          pasteGen++
+          await dropBoxTiles($)
+          return { text: `Image preview off: the clipboard is not read; /${COMMAND} preview on turns it on again.${await persist($, 'off', STORE_PREVIEW)}` }
+        }
+        case 'draw-mode': {
+          const mode = asked.value
+          await update($, draw, () => mode)
+          await update($, pictures, () => isPictures(mode, canPicture))
+          return { text: `Image tiles drawn as ${drawWords(mode)}.${await persist($, mode, STORE_DRAW)}` }
+        }
         default:
           return { text: USAGE }
       }
@@ -414,14 +856,20 @@ export const register: Register = (on, options: PluginOptions) => {
   onPlaced(on)
 
   on('ui.render', { component: 'AbovePrompt' }, ($, e, next) =>
-    drawRow($, e, () => next(e), {
-      // The press's work runs from a timer, never inside the press; the toast names the command twin.
-      clear: () =>
-        $.clock.after(DELAY_MS, () => {
-          void clearAll($)
-            .then(() => $.ui.toast(`Image tiles cleared (/${COMMAND} clear).`))
-            .catch(err => $.ui.toast(`/${COMMAND} clear: ${whyOf(err)}`))
-        }),
-    }),
+    drawRow(
+      $,
+      e,
+      () => next(e),
+      {
+        // The press's work runs from a timer, never inside the press; the toast names the command twin.
+        clear: () =>
+          $.clock.after(DELAY_MS, () => {
+            void clearAll($)
+              .then(() => $.ui.toast(`Image tiles cleared (/${COMMAND} clear).`))
+              .catch(err => $.ui.toast(`/${COMMAND} clear: ${whyOf(err)}`))
+          }),
+      },
+      { size: sizeOf(options.size) },
+    ),
   )
 }

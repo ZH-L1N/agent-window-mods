@@ -16,10 +16,22 @@ export type ImageTile = {
   columns: number
   rows: number
   cells: string
+  /** The small PNG (at most 512 pixels a side) the terminal reads to draw the tile as a true picture; absent when none was made. */
+  file?: string
+  /** A whole number that changes with `file`'s content under the same path. */
+  gen?: number
+  /** A tile of the box not sent yet without a picture: why (`no picture on the clipboard`, `a later paste replaced it on the clipboard`); absent otherwise. */
+  note?: string
 }
 
 /** /img under on|off as kept in the store; '' while the `under` option applies. */
 export type ImagesUnder = '' | 'on' | 'off'
+
+/** /img preview on|off as kept in the store; '' while the `preview` option applies. */
+export type ImagesPreview = '' | 'on' | 'off'
+
+/** /img draw auto|picture|blocks as kept in the store; '' while the `draw` option applies. */
+export type ImagesDraw = '' | 'auto' | 'picture' | 'blocks'
 
 /**
  * A row placed in the transcript after a sent prompt: that prompt's tags, when
@@ -43,6 +55,14 @@ declare module 'claude-code' {
       thumbs: Record<string, ImageTile>
       /** /img under on|off as kept in the store; '' while the `under` option applies. */
       under: ImagesUnder
+      /** The tiles of the images in the prompt box, not sent yet, at most 6, newest last; [] once the prompt is sent, the box empties, or /img clear. */
+      pending: ImageTile[]
+      /** /img preview on|off as kept in the store; '' while the `preview` option applies. */
+      preview: ImagesPreview
+      /** /img draw auto|picture|blocks as kept in the store; '' while the `draw` option applies. */
+      draw: ImagesDraw
+      /** Whether tiles with a small PNG are drawn as true pictures: the draw mode as resolved at session start and at /img draw. */
+      pictures: boolean
     }
   }
 }

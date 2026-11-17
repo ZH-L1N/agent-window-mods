@@ -77,6 +77,10 @@ export type World = {
   store: Map<string, unknown>
   /** The fake disk: text or bytes by path. */
   files: Map<string, string | Uint8Array>
+  /** When each file was last written, on the clock; a file absent here was written now. */
+  mtimes: Map<string, number>
+  /** Every path $.fs.write wrote, in order. */
+  writes: string[]
   /** Every argv $.process.run was called with, and its init. */
   runs: string[][]
   inits: unknown[]
@@ -100,6 +104,17 @@ export type World = {
   command: (args: string) => Promise<string>
   /** Moves the clock on far enough for a run whose files are all there. */
   settle: () => Promise<void>
+  /**
+   * The person's edit that leaves `text` in the box: a paste (no key) unless
+   * `key` names the key typed. When `text` goes on from the box as it stands,
+   * the edit inserts only what follows (`inputText`); otherwise it replaces
+   * the whole box. A sent prompt empties the box.
+   */
+  edit: (text: string, key?: string) => Promise<void>
+  /** A write to the box no edit carried, by `origin` (`engine` by default). */
+  change: (text: string, origin?: string) => Promise<void>
+  /** Every osascript argv run, in order. */
+  osaRuns: () => string[][]
 }
 
 export type WorldShape = {
@@ -122,7 +137,28 @@ export type WorldShape = {
   sipsBreaks?: 'exit' | 'timeout'
   /** Every PNG is a symbolic link to a file elsewhere. */
   isPngLinked?: boolean
+  /** Variables besides HOME the plugin reads from the environment. */
+  env?: Record<string, string>
+  /** HOME, '/Users/me' by default. */
+  home?: string
+  /** The session's id, SESSION by default. */
+  sessionId?: string
+  /** What the clipboard holds: a picture (the default), or none (osascript exits 1). */
+  clipboard?: 'png' | 'none'
+  /** osascript takes this long on the clock before it answers. */
+  osaDelayMs?: number
+  /** sips fails to write the small PNG. */
+  isNoSmallPng?: boolean
+  /** sips takes this long on the clock before it writes the small PNG. */
+  smallPngDelayMs?: number
 }
+
+/**
+ * The box's events as the engine raises them: the test's `$` carries
+ * `prompt.edit` and `prompt.change` at run time, but its declared type
+ * (EventCalls) lists neither, so they are reached through this view.
+ */
+const raised = ($: Engine) => $.prompt as unknown as { edit: (e: unknown) => Promise<unknown>; change: (e: unknown) => Promise<unknown> }
 
 const ok = (stdout: string) => ({ exitCode: 0, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false })
 const fail = (code = 1) => ({ exitCode: code, stdout: '', stderr: 'mock: no answer', isStdoutTruncated: false, isStderrTruncated: false })
@@ -134,11 +170,17 @@ const fail = (code = 1) => ({ exitCode: code, stdout: '', stderr: 'mock: no answ
  */
 export async function world($: Engine, on: On, shape: WorldShape = {}): Promise<World> {
   const clock = mock.clock(on, { now: T0 })
-  mock.env(on, shape.isNoHome ? {} : { HOME })
+  mock.env(on, { ...(shape.isNoHome ? {} : { HOME: shape.home ?? HOME }), ...(shape.env ?? {}) })
   const toasts: string[] = []
   const latest = new Map<string, unknown>()
   const store = new Map<string, unknown>(Object.entries(shape.stored ?? {}))
   const files = new Map<string, string | Uint8Array>()
+  const mtimes = new Map<string, number>()
+  const writes: string[] = []
+  const save = (path: string, content: string | Uint8Array) => {
+    files.set(path, content)
+    mtimes.set(path, clock.now())
+  }
   const runs: string[][] = []
   const inits: unknown[] = []
   const places: string[] = []
@@ -177,14 +219,28 @@ export async function world($: Engine, on: On, shape: WorldShape = {}): Promise<
     places.push(id)
     return { value: { isPlaced: true, requestId: `placed-${id}` } } as never
   })
-  on('session.id', () => ({ value: SESSION }) as never)
+  on('session.id', () => ({ value: shape.sessionId ?? SESSION }) as never)
   on('session.cwd', () => ({ value: cwd }) as never)
-  on('fs.list', (_$, e) => {
-    const path = (e as { path: string }).path
-    return (path === '/private/tmp' ? { value: tmp.map(t => ({ ...t, size: 0, mtimeMs: 0, isLink: false })) } : { deny: 'ENOENT' }) as never
-  })
   // A path exists as a file, or as a folder when a file is beneath it.
   const isThere = (path: string) => files.has(path) || [...files.keys()].some(k => k.startsWith(`${path}/`))
+  const sizeOf = (f: string | Uint8Array | undefined) => (f === undefined ? 0 : typeof f === 'string' ? new TextEncoder().encode(f).length : f.length)
+  on('fs.list', (_$, e) => {
+    const path = (e as { path: string }).path
+    if (path === '/private/tmp') return { value: tmp.map(t => ({ ...t, size: 0, mtimeMs: 0, isLink: false })) } as never
+    if (files.has(path) || !isThere(path)) return { deny: 'ENOENT' } as never
+    // A folder of the fake disk: its files, and its folders by name.
+    const names = new Set<string>()
+    for (const k of files.keys()) if (k.startsWith(`${path}/`)) names.add(k.slice(path.length + 1).split('/')[0]!)
+    const entries = [...names].sort().map(name => {
+      const full = `${path}/${name}`
+      const isLinked = shape.isPngLinked === true && name.endsWith('.png')
+      if (isLinked) return { name, kind: 'other', size: 0, mtimeMs: 0, isLink: true }
+      return files.has(full)
+        ? { name, kind: 'file', size: sizeOf(files.get(full)), mtimeMs: mtimes.get(full) ?? clock.now(), isLink: false }
+        : { name, kind: 'dir', size: 0, mtimeMs: 0, isLink: false }
+    })
+    return { value: entries } as never
+  })
   on('fs.exists', (_$, e) => {
     existsCalls++
     return { value: isThere((e as { path: string }).path) } as never
@@ -195,7 +251,9 @@ export async function world($: Engine, on: On, shape: WorldShape = {}): Promise<
     const isLinked = shape.isPngLinked === true && r.path.endsWith('.png')
     const kind = files.has(r.path) ? 'file' : 'dir'
     const realPath = isLinked ? '/Users/me/secret.png' : r.path
-    return { value: { kind, size: 0, mtimeMs: 0, isLink: isLinked, ...(r.resolve ? { realPath } : {}) } } as never
+    const size = sizeOf(files.get(r.path))
+    const mtimeMs = files.has(r.path) ? (mtimes.get(r.path) ?? clock.now()) : 0
+    return { value: { kind, size, mtimeMs, isLink: isLinked, ...(r.resolve ? { realPath } : {}) } } as never
   })
   on('fs.read', (_$, e) => {
     const r = e as { path: string; as: string }
@@ -206,14 +264,31 @@ export async function world($: Engine, on: On, shape: WorldShape = {}): Promise<
   })
   on('fs.write', (_$, e) => {
     const w = e as { path: string; text: string }
-    files.set(w.path, w.text)
+    writes.push(w.path)
+    save(w.path, w.text)
     return { value: undefined } as never
   })
   on('process.run', async (_$, e) => {
     const w = e as { argv: string[]; init?: unknown }
     runs.push([...w.argv])
     inits.push(w.init)
+    if (w.argv[0] === '/usr/bin/osascript') {
+      if (shape.osaDelayMs) await clock.sleep(shape.osaDelayMs)
+      if (shape.clipboard === 'none') return { value: fail() } as never
+      const path = /POSIX file "([^"]*)"/.exec(w.argv[4] ?? '')?.[1]
+      if (path === undefined) return { value: fail() } as never
+      save(path, 'clipboard-png')
+      return { value: ok('') } as never
+    }
     if (w.argv[0] !== 'sips') return { value: fail() } as never
+    if (w.argv[1] === '-s' && w.argv[3] === 'png') {
+      const from = w.argv[6]!
+      const out = w.argv[8]!
+      if (shape.smallPngDelayMs) await clock.sleep(shape.smallPngDelayMs)
+      if (shape.isNoSmallPng || !files.has(from)) return { value: fail() } as never
+      save(out, 'small-png')
+      return { value: ok(`${from}\n  ${out}\n`) } as never
+    }
     if (shape.isNoSips) return { value: fail(127) } as never
     if (w.argv[1] === '-g') {
       const png = w.argv[5]!
@@ -224,11 +299,11 @@ export async function world($: Engine, on: On, shape: WorldShape = {}): Promise<
     const bmp = w.argv[8]!
     if (!files.has(png)) return { value: fail() } as never
     if (shape.sipsBreaks) {
-      files.set(bmp, DEFAULT_BMP.slice(0, 20))
+      save(bmp, DEFAULT_BMP.slice(0, 20))
       return (shape.sipsBreaks === 'exit' ? { value: fail() } : { deny: 'still running' }) as never
     }
     const n = Number(/(\d+)\.png$/.exec(png)?.[1])
-    files.set(bmp, shape.bmps?.[n] ?? DEFAULT_BMP)
+    save(bmp, shape.bmps?.[n] ?? DEFAULT_BMP)
     return { value: ok(`${png}\n  ${bmp}\n`) } as never
   })
   on('ui.render', async ($$, e) => {
@@ -241,6 +316,13 @@ export async function world($: Engine, on: On, shape: WorldShape = {}): Promise<
   on('session.start', async () => ({ cwd }) as never)
   on('session.end', async (_$, e) => ({ sessionId: (e as { sessionId: string }).sessionId }) as never)
   on('prompt.submit', (_$, e) => ({ text: (e as { text: string }).text }) as never)
+  on('prompt.edit', (_$, e) => {
+    const r = e as { text: string; start: number; end: number; inputText: string }
+    const text = r.text.slice(0, r.start) + r.inputText + r.text.slice(r.end)
+    return { text, cursor: r.start + r.inputText.length } as never
+  })
+  on('prompt.change', (_$, e) => ({ text: (e as { text: string }).text }) as never)
+  let box = ''
   on('turn.start', async (_$, e) => ({ turnId: (e as { turnId: string }).turnId }) as never)
   on('turn.step', async function* (_$, e) {
     const s = e as { turnId: string; index: number }
@@ -282,6 +364,8 @@ export async function world($: Engine, on: On, shape: WorldShape = {}): Promise<
     toasts,
     store,
     files,
+    mtimes,
+    writes,
     runs,
     inits,
     existsCalls: () => existsCalls,
@@ -296,6 +380,7 @@ export async function world($: Engine, on: On, shape: WorldShape = {}): Promise<
       else void clock.sleep(afterMs).then(put)
     },
     send: async (text, opts = {}) => {
+      box = ''
       await $.prompt.submit({
         text,
         wait: opts.wait === true,
@@ -315,6 +400,25 @@ export async function world($: Engine, on: On, shape: WorldShape = {}): Promise<
     settle: async () => {
       await clock.advance(50)
     },
+    edit: async (text, key) => {
+      const before = box
+      box = text
+      const isAppend = text.startsWith(before)
+      await raised($).edit({
+        origin: { kind: 'composer' },
+        text: before,
+        cursor: before.length,
+        start: isAppend ? before.length : 0,
+        end: before.length,
+        inputText: isAppend ? text.slice(before.length) : text,
+        ...(key !== undefined ? { key: { key } } : {}),
+      })
+    },
+    change: async (text, origin = 'engine') => {
+      box = text
+      await raised($).change({ text, cursor: text.length, origin: origin === 'plugin' ? { kind: 'plugin', name: 'other' } : { kind: origin } } as never)
+    },
+    osaRuns: () => runs.filter(a => a[0] === '/usr/bin/osascript'),
   }
 }
 

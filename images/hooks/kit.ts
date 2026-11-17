@@ -2,8 +2,11 @@
 // to their listed values, the tags read from a sent prompt, the session's
 // images folder by name, the sips command lines, the BMP reader, the
 // box-average into half-block Raster cells, the command's words, the
-// terminal-column measure, the stack-order helper, and the thumbnails and
-// placed rows of the row under the sent prompt. Pure functions only; the
+// terminal-column measure, the stack-order helper, the thumbnails and
+// placed rows of the row under the sent prompt, and (0.4.0) the reading of a
+// change in the prompt box, the osascript command line and the file names of
+// the preview before sending, the draw mode, the true picture's box and the
+// sweep of picture files a killed session left. Pure functions only; the
 // state atoms are declared again in each file that reads or writes them (the
 // engine reads a state source only from a const of the calling file).
 import type { RenderElement, RenderNode } from 'claude-code'
@@ -38,7 +41,12 @@ export const TMP_ROOT = '/private/tmp'
 /** The scratch folder for the BMPs, under HOME. */
 export const CACHE_DIR = '.cache/zehui-mods/images'
 
-export const USAGE = `Usage: /${COMMAND} [<n> | on | off | clear | under on | under off]   (/${COMMAND} shows the last tiles again; <n> draws [Image #n] of this session; off stops the automatic tiles; clear drops them; under on|off: the thumbnails under the sent prompt)`
+/** Where the store keeps /img preview on|off across sessions. */
+export const STORE_PREVIEW = 'preview'
+/** Where the store keeps /img draw auto|picture|blocks across sessions. */
+export const STORE_DRAW = 'draw'
+
+export const USAGE = `Usage: /${COMMAND} [<n> | on | off | clear | under on | under off | preview on | preview off | draw auto | draw picture | draw blocks]   (/${COMMAND} shows the last tiles again; <n> draws [Image #n] of this session; off stops the automatic tiles; clear drops them; under on|off: the thumbnails under the sent prompt; preview on|off: a pasted image shown before you send; draw: true pictures, half-blocks, or auto by the terminal)`
 
 // --- the options, held to their listed values
 
@@ -70,6 +78,36 @@ export const underOf = (option: unknown): 'on' | 'off' => (option === 'off' ? 'o
 /** Whether a sent prompt gets a thumbnail row under it: the store's /img under on|off, else the `under` option. */
 export const isUnderOn = (under: string, option: unknown): boolean => (under === 'on' || under === 'off' ? under === 'on' : underOf(option) === 'on')
 
+/** The `preview` option: 'on' unless it says 'off'. */
+export const previewOf = (option: unknown): 'on' | 'off' => (option === 'off' ? 'off' : 'on')
+
+/** Whether a pasted image is shown before sending: the store's /img preview on|off, else the `preview` option. */
+export const isPreviewOn = (preview: string, option: unknown): boolean =>
+  preview === 'on' || preview === 'off' ? preview === 'on' : previewOf(option) === 'on'
+
+export const DRAWS = ['auto', 'picture', 'blocks'] as const
+export type DrawMode = (typeof DRAWS)[number]
+
+/** The `draw` option: auto, picture or blocks; auto for anything else. */
+export const drawOf = (option: unknown): DrawMode => DRAWS.find(d => d === option) ?? 'auto'
+
+/** The draw mode: the store's /img draw, else the `draw` option. */
+export const drawModeOf = (stored: string, option: unknown): DrawMode => DRAWS.find(d => d === stored) ?? drawOf(option)
+
+/** The terminals `auto` draws true pictures in, by TERM_PROGRAM, lower case. */
+const PICTURE_TERMINALS: readonly string[] = ['ghostty', 'kitty']
+
+/**
+ * Whether the terminal can draw true pictures, from the environment read at
+ * the session's start: CLAUDE_CODE_FORCE_TERMINAL_IMAGES is `1`, or
+ * TERM_PROGRAM is ghostty or kitty. Unset or unreadable: no.
+ */
+export const canDrawPictures = (force: string | undefined, term: string | undefined): boolean =>
+  force === '1' || (typeof term === 'string' && PICTURE_TERMINALS.includes(term.toLowerCase()))
+
+/** Whether tiles are drawn as true pictures: `picture`, or `auto` where the terminal can. */
+export const isPictures = (mode: DrawMode, canPicture: boolean): boolean => mode === 'picture' || (mode === 'auto' && canPicture)
+
 // --- the tags
 
 /** `[Image #3]` as the engine writes a pasted image's tag in the prompt. */
@@ -86,6 +124,64 @@ export function tagsOf(text: string): number[] {
 }
 
 export const tagText = (n: number): string => `[Image #${n}]`
+
+/** The tags in `now` that were not in `before`, in order. */
+export const freshTags = (before: readonly number[], now: readonly number[]): number[] => now.filter(n => !before.includes(n))
+
+/** Whether two tag lists are the same, in the same order. */
+export const sameTags = (a: readonly number[], b: readonly number[]): boolean => a.length === b.length && a.every((n, i) => n === b[i])
+
+/**
+ * prompt.change origins that are not a paste: a recalled history entry, an
+ * undo, a plugin's fill, a clear, the app's hand. A new tag from one of these
+ * is not read from the clipboard. Anything else (`engine`, a kind not known)
+ * may be a paste.
+ */
+const NOT_PASTE: readonly string[] = ['history', 'undo', 'plugin', 'clear', 'app']
+export const mayBePaste = (originKind: string): boolean => !NOT_PASTE.includes(originKind)
+
+/**
+ * The tags in `now` that were not in `before` and lie above `highest`, the
+ * highest tag seen so far in this conversation. The engine numbers pasted
+ * images upward, so a new tag at or below it was put back (a queued prompt
+ * pulled back, a prompt put back after an interrupt, a stash restored), not
+ * pasted: its picture is no longer the one on the clipboard.
+ */
+export const pastedTags = (before: readonly number[], now: readonly number[], highest: number): number[] =>
+  freshTags(before, now).filter(n => n > highest)
+
+/** `[Image #n]` tags and white space only (a pasted image's own insertion). */
+const TAGS_ONLY = /^(?:\s|\[Image #\d{1,6}\])*$/
+
+/**
+ * Whether an edit's inserted text is text of its own: not empty and not only
+ * `[Image #n]` tags and white space. A dragged file or a pasted path arrives
+ * so, and the engine turns it into a tag: the new tags of that same edit are
+ * not the clipboard's picture.
+ */
+export const isTextInsert = (inputText: unknown): boolean => typeof inputText === 'string' && inputText !== '' && !TAGS_ONLY.test(inputText)
+
+/** How a file path starts: `/`, `~`, `file://`, or a quote and then `/` or `~`. */
+const PATH_START = /^(?:\/|~|file:\/\/|["'][/~])/
+/** How the name of an image file ends, any letter case, before a closing quote. */
+const IMAGE_END = /\.(?:png|jpe?g|gif|webp|bmp|tiff?|heic)\s*["']?$/i
+
+/**
+ * Whether an edit's inserted text, trimmed, looks like a file path or a list
+ * of them (a dragged file, a pasted path): no line break, and it starts with
+ * `/`, `~`, `file://` or a quote followed by `/` or `~`, or it ends (a closing
+ * quote and white space aside) with an image file's extension. Typed text, an
+ * input-method commit, dictated text and a link to a web page do not.
+ */
+export function isPathInsert(inputText: unknown): boolean {
+  if (typeof inputText !== 'string') return false
+  const text = inputText.trim()
+  if (text === '' || /[\r\n]/.test(text)) return false
+  return PATH_START.test(text) || IMAGE_END.test(text)
+}
+
+/** After an insertion that looks like a path, a new tag an engine write brings within this long is that path's, not the clipboard's. */
+export const PATH_INSERT_WINDOW_MS = 2_000
 
 // --- where the engine writes the pasted images
 
@@ -116,6 +212,12 @@ export const sipsArgv = (png: string, bmp: string): string[] => ['sips', '-s', '
 
 /** The command that reads the PNG's own size (sips refuses a query and a change in one run). */
 export const sizeArgv = (png: string): string[] => ['sips', '-g', 'pixelWidth', '-g', 'pixelHeight', png]
+
+/** The largest side of the small PNG the terminal reads for a true picture. */
+export const SMALL_PNG_SIDE = 512
+
+/** sips: the picture as a PNG no wider or taller than SMALL_PNG_SIDE pixels (`out` may be the picture itself). */
+export const smallPngArgv = (picture: string, out: string): string[] => ['sips', '-s', 'format', 'png', '-Z', String(SMALL_PNG_SIDE), picture, '--out', out]
 
 /** The width and height from `sips -g pixelWidth -g pixelHeight`, or null. */
 export function parseSipsSize(stdout: string): { w: number; h: number } | null {
@@ -263,7 +365,129 @@ export const withTile = (tiles: readonly ImageTile[], tile: ImageTile): ImageTil
 export const captionOf = (t: ImageTile): string => (t.w > 0 && t.h > 0 ? `${tagText(t.n)} ${t.w}x${t.h}` : tagText(t.n))
 
 /** The columns a tile takes in the row: its Raster or its caption, whichever is wider. */
-export const tileWidth = (t: ImageTile): number => Math.max(t.cells ? t.columns : 0, cellsOf(captionOf(t)))
+export const tileWidth = (t: ImageTile, caption: (t: ImageTile) => string = captionOf): number => Math.max(t.cells ? t.columns : 0, cellsOf(caption(t)))
+
+// --- before you send
+
+export const NOT_SENT = 'not sent yet'
+/** The note of a pasted tag when osascript finds no picture on the clipboard (not macOS, the clipboard emptied since). */
+export const NO_PICTURE = 'no picture on the clipboard'
+/** The note of a tag whose picture a later paste has taken off the clipboard (it holds one picture). */
+export const SUPERSEDED = 'a later paste replaced it on the clipboard'
+/** The osascript run's limit. */
+export const OSA_TIMEOUT_MS = 3_000
+
+/** The caption beneath a tile not sent yet: `[Image #n] WxH · not sent yet`, or the tag and its note. */
+export const pendingCaptionOf = (t: ImageTile): string => {
+  if (t.note) return `${tagText(t.n)} · ${t.note}`
+  return t.w > 0 && t.h > 0 ? `${tagText(t.n)} ${t.w}x${t.h} · ${NOT_SENT}` : `${tagText(t.n)} · ${NOT_SENT}`
+}
+
+/** A tile of the box not sent yet that shows only its tag and `note`. */
+export const noteTile = (n: number, note: string): ImageTile => ({ ...textTile(n), note })
+
+/** A path that can stand inside an AppleScript string literal: absolute, no double quote, backslash or control character. */
+export const isScriptSafePath = (path: string): boolean => path.startsWith('/') && !/["\\\u0000-\u001f\u007f]/.test(path)
+
+/** A session id fit for a file name in the scratch folder (letters, digits, `_`, `-`); anything else becomes `session`. */
+export const safeName = (id: string): string => (/^[A-Za-z0-9_-]{1,128}$/.test(id) ? id : 'session')
+
+/** Where the clipboard's picture for tag n is written before sending (and, as a true picture, scaled in place). */
+export const prePngPathOf = (home: string, fileId: string, n: number): string => `${home}/${CACHE_DIR}/${fileId}-${n}-pre.png`
+
+/** The BMP sips writes for tag n before sending. */
+export const preBmpPathOf = (home: string, fileId: string, n: number): string => `${home}/${CACHE_DIR}/${fileId}-${n}-pre.bmp`
+
+/**
+ * The small PNG of one build of tag n after sending, named by the build's
+ * content number `gen`: a rebuild never writes over a file a tile or a
+ * thumbnail still holds.
+ */
+export const smallPngPathOf = (home: string, fileId: string, n: number, gen: number): string => `${home}/${CACHE_DIR}/${fileId}-${n}-${gen}.png`
+
+// --- the files left behind
+
+/** A picture file in the scratch folder older than this, of a session with no sign of life this recent, is emptied at a session's start (a killed session's). */
+export const SWEEP_AGE_MS = 24 * 60 * 60 * 1000
+/** The most files looked at in one sweep. */
+export const SWEEP_MAX = 200
+/** A session's sign of life: an empty `<session>.alive` in the scratch folder, written at its start and every ALIVE_EVERY_MS. */
+export const ALIVE_EXT = '.alive'
+export const ALIVE_EVERY_MS = 60 * 60 * 1000
+
+/** Where the session `fileId` (its safe name, as its picture files use) writes its sign of life. */
+export const alivePathOf = (home: string, fileId: string): string => `${home}/${CACHE_DIR}/${fileId}${ALIVE_EXT}`
+
+type Listed = { name: string; kind: string; size: number; mtimeMs: number; isLink: boolean }
+
+/**
+ * The PNGs of a listing of the scratch folder `dir` to empty at a session's
+ * start: plain files (no link) ending in `.png`, not empty, last written more
+ * than SWEEP_AGE_MS before `now`, and not of a session that shows a sign of
+ * life: a plain `<session>.alive` written less than SWEEP_AGE_MS before `now`
+ * protects every name that starts with `<session>-` (the whole name, so a
+ * session name may hold a `-`). At most SWEEP_MAX; the .alive files are never
+ * among them nor counted.
+ */
+export function staleOf(entries: readonly Listed[], dir: string, now: number): string[] {
+  const living = entries
+    .filter(e => e.kind === 'file' && !e.isLink && e.name.endsWith(ALIVE_EXT) && e.name.length > ALIVE_EXT.length && now - e.mtimeMs < SWEEP_AGE_MS)
+    .map(e => `${e.name.slice(0, -ALIVE_EXT.length)}-`)
+  return entries
+    .filter(e => e.kind === 'file' && !e.isLink && e.name.endsWith('.png') && e.size > 0 && now - e.mtimeMs > SWEEP_AGE_MS)
+    .filter(e => !living.some(prefix => e.name.startsWith(prefix)))
+    .slice(0, SWEEP_MAX)
+    .map(e => `${dir}/${e.name}`)
+}
+
+/** The osascript command that writes the clipboard's picture to `png` as PNG data; each script line its own -e argument, no shell. */
+export const osascriptArgv = (png: string): string[] => [
+  '/usr/bin/osascript',
+  '-e',
+  'set png_data to (the clipboard as «class PNGf»)',
+  '-e',
+  `set fp to open for access POSIX file "${png}" with write permission`,
+  '-e',
+  'set eof of fp to 0',
+  '-e',
+  'write png_data to fp',
+  '-e',
+  'close access fp',
+]
+
+// --- true pictures
+
+/**
+ * A true picture's box in cells: `columns` wide and its rows from the
+ * picture's shape (a cell is about twice as tall as wide), at least one; past
+ * `maxRows` rows it is `maxRows` rows and narrower, so the picture keeps its
+ * shape (the terminal scales the picture to fill the box). The shape is the
+ * tile's own size, else its Raster's, else square.
+ */
+export function pictureBox(t: ImageTile, columns: number, maxRows: number): { columns: number; rows: number } {
+  const shape = t.w > 0 && t.h > 0 ? t.h / t.w : t.columns > 0 && t.rows > 0 ? (2 * t.rows) / t.columns : 1
+  const most = Math.max(1, Math.floor(maxRows))
+  let c = Math.max(1, Math.floor(columns))
+  let r = Math.max(1, Math.round((c * shape) / 2))
+  if (r > most) {
+    r = most
+    c = Math.max(1, Math.min(c, Math.round((2 * r) / shape)))
+  }
+  return { columns: c, rows: r }
+}
+
+/** Whether a tile is drawn as a true picture: pictures on and a small PNG made for it. */
+export const isPictureTile = (t: ImageTile, pictures: boolean): boolean => pictures && typeof t.file === 'string' && t.file !== ''
+
+/** The small PNGs `tiles` hold, each once. */
+export const filesOf = (tiles: Iterable<ImageTile>): string[] => {
+  const out: string[] = []
+  for (const t of tiles) if (t.file && !out.includes(t.file)) out.push(t.file)
+  return out
+}
+
+/** The files among `candidates` that none of `held` holds any more: the ones to empty. */
+export const unheldOf = (candidates: readonly string[], held: readonly string[]): string[] => candidates.filter((f, i) => !held.includes(f) && candidates.indexOf(f) === i)
 
 // The hooks environment has the web's Uint8Array.prototype.toBase64 and
 // Uint8Array.fromBase64; the es2023 lib types neither.
@@ -280,12 +504,17 @@ export type ImgArgs =
   | { kind: 'off' }
   | { kind: 'clear' }
   | { kind: 'under'; value: 'on' | 'off' }
+  | { kind: 'preview'; value: 'on' | 'off' }
+  | { kind: 'draw-mode'; value: DrawMode }
   | { kind: 'usage' }
 
 export function parseArgs(args: string): ImgArgs {
   const words = args.trim().toLowerCase().split(/\s+/).filter(Boolean)
   if (words.length === 0) return { kind: 'show' }
   if (words.length === 2 && words[0] === 'under' && (words[1] === 'on' || words[1] === 'off')) return { kind: 'under', value: words[1] }
+  if (words.length === 2 && words[0] === 'preview' && (words[1] === 'on' || words[1] === 'off')) return { kind: 'preview', value: words[1] }
+  const mode = words.length === 2 && words[0] === 'draw' ? DRAWS.find(d => d === words[1]) : undefined
+  if (mode) return { kind: 'draw-mode', value: mode }
   if (words.length > 1) return { kind: 'usage' }
   const [w] = words
   const tag = /^(?:#)?(\d{1,6})$/.exec(w!)

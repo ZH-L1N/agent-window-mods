@@ -1,7 +1,7 @@
 {
   "name": "images",
-  "version": "0.3.0",
-  "description": "After a prompt is sent, an IMAGES band above the prompt draws each pasted [Image #n] as a half-block thumbnail (macOS sips turns the engine's PNG into a small BMP), with [Image #n] WxH beneath; cleared when the next prompt is sent. A small labelled thumbnail row is also placed in the transcript under the sent prompt. /img shows the last tiles again, /img <n> draws one image of this session, /img on | off | clear, /img under on | off.",
+  "version": "0.4.0",
+  "description": "Each pasted [Image #n] shown as a thumbnail in an IMAGES band above the prompt: before you send, as soon as the tag appears in the prompt box (macOS osascript writes the clipboard's picture to a PNG; caption 'not sent yet'), and after you send, from the engine's own PNG; also in a small labelled row placed in the transcript under the sent prompt. Drawn as true pictures (the terminal reads a small PNG sips makes) where the terminal can, half-blocks otherwise. /img shows the last tiles again, /img <n> draws one image of this session, /img on | off | clear, /img under on | off, /img preview on | off, /img draw auto | picture | blocks.",
   "author": {
     "name": "Zehui Lin"
   },
@@ -49,6 +49,27 @@
       "options": [
         "on",
         "off"
+      ]
+    },
+    "preview": {
+      "type": "string",
+      "title": "Show a pasted image before you send",
+      "description": "on (default) or off: when a new [Image #n] tag appears in the prompt box from a paste, the clipboard's picture is read (macOS osascript) and shown above the prompt, captioned 'not sent yet'. Off: the clipboard is never read. /img preview on | off overrides it and is kept for the next session.",
+      "default": "on",
+      "options": [
+        "on",
+        "off"
+      ]
+    },
+    "draw": {
+      "type": "string",
+      "title": "How tiles are drawn",
+      "description": "auto (default): true pictures when, at the session's start, CLAUDE_CODE_FORCE_TERMINAL_IMAGES is 1 or TERM_PROGRAM is ghostty or kitty, half-blocks otherwise; picture: true pictures; blocks: half-blocks. A tile with no small PNG is half-blocks in every mode. /img draw auto | picture | blocks overrides it and is kept for the next session.",
+      "default": "auto",
+      "options": [
+        "auto",
+        "picture",
+        "blocks"
       ]
     }
   }
