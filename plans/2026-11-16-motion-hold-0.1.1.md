@@ -414,4 +414,4 @@ two prices occur there.
 
 | Step | Commit | Notes |
 | --- | --- | --- |
-| motion-hold 0.1.1 | pending | |
+| motion-hold 0.1.1 | ed5142a | Landed as checked on 2026-11-17, pushed and installed (0.1.0 to 0.1.1). 465 tests. The check: 12 confirmed, none high; eight defects stay open for 0.1.2. |
