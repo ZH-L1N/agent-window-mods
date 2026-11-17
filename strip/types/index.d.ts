@@ -60,6 +60,8 @@ declare module 'claude-code' {
       isPanesClear: boolean
       /** The cache-clock mod's prompt-cache lifetime option, as read at the session's start: 5 or 60. */
       cacheMinutes: number
+      /** The colour behind the whole band, `#rrggbb`, or `off` for none (/strip band). */
+      bandColor: string
     }
   }
 }

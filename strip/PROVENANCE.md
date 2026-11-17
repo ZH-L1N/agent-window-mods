@@ -30,6 +30,12 @@ code is copied, and no outside mod's source was opened to write it.
 - The command with store-backed switches, the framed pane buttons with
   command twins and the README and test-kit shape follow the owner's sys,
   handoff, peers and here mods.
+- Version 0.1.1 (2026-11-17, plan `plans/2026-11-17-strip-band-background.md`):
+  the band's background, one wrapper around the list hook's answer. It was
+  tried first in a throwaway mod of the owner's own, with the shades side by
+  side in a live session (Claude Code 2.1.326). That probe also showed that
+  the engine refuses a wrapper that sets a width, so the wrapper carries a
+  colour and nothing else.
 
 ## Look
 
@@ -40,6 +46,11 @@ green `#a6e3a1`, yellow `#f9e2af`, peach `#fab387`, red `#f38ba8`, teal
 `#11111b` for the text of an attention pill. The rounded caps and the icons
 are code points of a Nerd Font's private use area, named by number in
 `hooks/pills.ts`; no font file is part of this mod.
+
+The band's shades (`hooks/band.ts`), by value only: `crust` `#11111b` and
+`mantle` `#181825` are Catppuccin Mocha's, and `raised` `#24273a` is
+Catppuccin Macchiato's base. `black`, `navy`, `plum`, `teal`, `moss` and
+`cocoa` are the owner's own picks.
 
 ## Ideas
 

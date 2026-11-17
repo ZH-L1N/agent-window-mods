@@ -2,12 +2,14 @@
 // HANDOFF and CACHE rows. It reads the other mods' state (sources.ts), draws
 // one row (pills.ts), orders the whole band through the one AbovePromptList
 // hook (order.ts), records each turn's edits (diff.ts), keeps the session's
-// health (health.ts) and opens three panes of its own (panes.tsx). Every
+// health (health.ts), opens three panes of its own (panes.tsx) and puts one
+// background colour behind the whole band (band.ts). Every
 // drawing hook and observer falls back to next(e) on any error, so a bug here
 // never blanks the band, hides a row or touches a tool call. Twin: /strip.
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, PluginOptions, Register, RenderElement, RenderInput } from 'claude-code'
 
+import { BAND_DEFAULT, BAND_NAMES, BAND_OFF, BAND_SHADES, bandColorOf, bandLabel } from './band'
 import { STEP_CAP, stepOf } from './diff'
 import type { DiffStep } from './diff'
 import { healthStep, healthText } from './health'
@@ -29,6 +31,7 @@ const health = atom({ plugin: 'strip', key: 'health' } as const, { kind: 'ok' })
 const isShowingRows = atom({ plugin: 'strip', key: 'isShowingRows' } as const, false)
 const isPanesClear = atom({ plugin: 'strip', key: 'isPanesClear' } as const, true)
 const cacheMinutes = atom({ plugin: 'strip', key: 'cacheMinutes' } as const, 60)
+const bandColor = atom({ plugin: 'strip', key: 'bandColor' } as const, BAND_SHADES[BAND_DEFAULT])
 
 /** The strip's row in the band. */
 export const ROW_KEY = 'zm-10-strip'
@@ -41,7 +44,7 @@ export const WORK_FRAME_MS = 150
 /** Panes of the engine's own, which keep their look. */
 const ENGINE_PANES: readonly string[] = ['settings', 'changes']
 
-const USAGE = 'Usage: /strip sources | context [close] | system [close] | diff [prev | next | <n> | close] | open <pill> | rows [show | hide] | panes [clear | solid]'
+const USAGE = 'Usage: /strip sources | context [close] | system [close] | diff [prev | next | <n> | close] | open <pill> | rows [show | hide] | panes [clear | solid] | band [<shade> | #rrggbb | off]'
 
 // The tick that redraws the cache minutes. A module variable: a reload drops
 // the timer with it, and the next main-loop turn starts another.
@@ -79,7 +82,7 @@ async function feedHealth($: EngineInterface, ev: HealthEvent): Promise<void> {
   if (after !== cur) await update($, health, () => after)
 }
 
-/** The options, then what /strip rows and /strip panes kept in the store, which wins. */
+/** The options, then what /strip rows, /strip panes and /strip band kept in the store, which wins. */
 async function loadChoices($: EngineInterface, options: PluginOptions): Promise<void> {
   const rows = await $.store.get('rows').catch(() => undefined)
   const panes = await $.store.get('panes').catch(() => undefined)
@@ -87,6 +90,10 @@ async function loadChoices($: EngineInterface, options: PluginOptions): Promise<
   const isClear = panes === 'clear' || panes === 'solid' ? panes === 'clear' : options.transparentPanes !== false
   await update($, isShowingRows, () => isShowing)
   await update($, isPanesClear, () => isClear)
+  // A stored choice that no longer reads falls through to the option, then to the default.
+  const band = await $.store.get('band').catch(() => undefined)
+  const color = bandColorOf(band) ?? bandColorOf(options.bandColor) ?? BAND_SHADES[BAND_DEFAULT]
+  await update($, bandColor, () => color)
 }
 
 /** cache-clock's prompt-cache lifetime, from its row of the config menu: `5` gives 5, anything else or no row 60. */
@@ -142,18 +149,24 @@ const rowsSentence = (isShowing: boolean): string =>
 const panesSentence = (isClear: boolean): string =>
   isClear ? 'Panes: no background fill (/strip panes solid).' : 'Panes: solid, as each surface draws them (/strip panes clear).'
 
-/** /strip sources: the strip as text, where each pill's value came from, and the two switches. */
+/** The band's background in words, as /strip sources and /strip band say it. */
+const bandSentence = (color: string): string =>
+  color === BAND_OFF ? 'Band background: none (/strip band <shade | #rrggbb>).' : `Band background: ${bandLabel(color)}, behind every row (/strip band off).`
+
+/** /strip sources: the strip as text, where each pill's value came from, and the three switches. */
 async function sourcesText($: EngineInterface): Promise<string> {
   const { facts, sources } = await readFacts($)
   const { level, pills } = fitStrip(facts, 1_000, 0)
   const isShowing = await read($, isShowingRows)
   const isClear = await read($, isPanesClear)
+  const band = await read($, bandColor)
   return [
     `strip, level ${level} at full width:`,
     `  ${stripText(pills)}`,
     ...PILL_IDS.map(id => `  ${id}: ${sources[id]}`),
     rowsSentence(isShowing),
     panesSentence(isClear),
+    bandSentence(band),
     USAGE,
   ].join('\n')
 }
@@ -209,6 +222,15 @@ async function runStrip($: EngineInterface, args: string): Promise<string> {
       }
       return panesSentence(await read($, isPanesClear))
     }
+    case 'band': {
+      if (arg !== '') {
+        const color = bandColorOf(arg)
+        if (color === null) return `Usage: /strip band [${BAND_NAMES.join(' | ')} | #rrggbb | off]`
+        await update($, bandColor, () => color)
+        await $.store.set('band', arg).catch(() => {})
+      }
+      return bandSentence(await read($, bandColor))
+    }
     default:
       return USAGE
   }
@@ -252,7 +274,7 @@ export const register: Register = (on, options) => {
       .register({
         name: 'strip',
         description: 'The pill strip above the prompt: where each pill reads its value, its three panes, and the old rows',
-        argumentHint: 'sources | context | system | diff | open <pill> | rows | panes',
+        argumentHint: 'sources | context | system | diff | open <pill> | rows | panes | band',
         immediate: true,
       })
       .catch(() => {})
@@ -440,15 +462,28 @@ export const register: Register = (on, options) => {
   // unchanged. Nothing is hidden or moved unless the strip drew its own row.
   // Another plugin's list hook nests with this one: the strip arranges what it
   // is handed and does not undo what a hook above it did.
+  //
+  // Then the band's background: the answer from beneath, wrapped in one Box
+  // that carries a colour and nothing else (the engine refuses a wrapper that
+  // sets a width). It wraps whenever the band has a row, also when the strip
+  // drew none; never on a survey or another surface.
   on('ui.render', { component: 'AbovePromptList' }, async ($, e, next) => {
     if (e.surface !== 'terminal' || e.props.hasSurvey) return next(e)
     const rows = e.props.rows
-    if (!rows.some(r => bareName(r.plugin) === 'strip')) return next(e)
-    const showOld = await read($, isShowingRows)
-    const keepHandoff = showOld ? true : await readKeepHandoff($).catch(() => true)
-    const arranged = arrangeRows(rows, { showOld, keepHandoff })
-    if (arranged.length === rows.length && arranged.every((r, i) => r === rows[i])) return next(e)
-    return next({ ...e, props: { ...e.props, rows: arranged } })
+    let arranged: typeof rows = rows
+    if (rows.some(r => bareName(r.plugin) === 'strip')) {
+      const showOld = await read($, isShowingRows)
+      const keepHandoff = showOld ? true : await readKeepHandoff($).catch(() => true)
+      arranged = arrangeRows(rows, { showOld, keepHandoff })
+    }
+    const isSame = arranged.length === rows.length && arranged.every((r, i) => r === rows[i])
+    const input = isSame ? e : { ...e, props: { ...e.props, rows: arranged } }
+    // A value that is no colour (a read that failed) draws none.
+    const color = arranged.length === 0 ? BAND_OFF : (bandColorOf(await read($, bandColor).catch(() => BAND_OFF)) ?? BAND_OFF)
+    if (color === BAND_OFF) return next(input)
+    const inner = await next(input)
+    const { Box } = $.ui.resolve(e)
+    return <Box backgroundColor={color}>{inner}</Box>
   }).catch(($, e, next) => next(e))
 
   on('ui.render', { component: 'Pane', requestId: 'strip-context' }, async ($, e, next) => {

@@ -44,6 +44,13 @@ name given several literal values, and input fed to a remote shell behind
 `sshpass` and fourteen more words. Its one check confirmed no high finding
 and left eight defects, listed in the mod's README.
 
+## Done (2026-11-17): strip 0.1.1
+
+Plan `plans/2026-11-17-strip-band-background.md`. The rows above the prompt,
+the strip's and every other mod's, are drawn on one background colour, so
+it is plain where the conversation ends: one wrapper in the strip's list
+hook, default `moss`, `/strip band <shade | #rrggbb | off>`.
+
 ## Next, in order
 
 1. **motion-hold 0.1.2:** what the check of 0.1.1 left, each with a test

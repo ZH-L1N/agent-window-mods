@@ -1,7 +1,7 @@
 {
   "name": "strip",
-  "version": "0.1.0",
-  "description": "One strip of quiet pills above the prompt in place of the SYS, PLAN, HANDOFF and CACHE rows: context, cache, diff, tests, agents, queue, system and peers, with a STOP and a health pill when needed. It reads the other mods' state, orders the whole band, and opens a context, a system and a last-turn diff pane. /strip.",
+  "version": "0.1.1",
+  "description": "One strip of quiet pills above the prompt in place of the SYS, PLAN, HANDOFF and CACHE rows: context, cache, diff, tests, agents, queue, system and peers, with a STOP and a health pill when needed. It reads the other mods' state, orders the whole band, puts one background colour behind it, and opens a context, a system and a last-turn diff pane. /strip.",
   "author": {
     "name": "Zehui Lin"
   },
@@ -20,6 +20,12 @@
       "title": "Panes without a background fill",
       "description": "On: a pane any mod opens without a background colour of its own is drawn with no fill, so the terminal shows through. /strip panes clear|solid overrides this.",
       "default": true
+    },
+    "bandColor": {
+      "type": "string",
+      "title": "Background behind the band",
+      "description": "One colour behind every row above the prompt, so the band stands apart from the conversation: a shade (black, crust, mantle, raised, navy, plum, teal, moss, cocoa), a colour as #rrggbb, or off. /strip band <shade | #rrggbb | off> overrides this.",
+      "default": "moss"
     }
   }
 }

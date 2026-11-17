@@ -75,7 +75,7 @@ need Claude Code's fullscreen renderer, so every button has a command:
 
 ## Command
 
-`/strip sources | context [close] | system [close] | diff [prev | next | <n> | close] | open <pill> | rows [show | hide] | panes [clear | solid]`
+`/strip sources | context [close] | system [close] | diff [prev | next | <n> | close] | open <pill> | rows [show | hide] | panes [clear | solid] | band [<shade> | #rrggbb | off]`
 
 - `sources` (also `/strip` alone): the strip as text, one line for each pill
   naming its source, and whether the old rows are hidden.
@@ -86,6 +86,7 @@ need Claude Code's fullscreen renderer, so every button has a command:
   and `health`.
 - `rows show`, `rows hide`: see below.
 - `panes clear`, `panes solid`: see below.
+- `band <shade>`, `band #rrggbb`, `band off`: see below.
 
 ## The old rows
 
@@ -108,6 +109,31 @@ another surface, or when the strip fails, the band is passed on as it came.
 The band's order, top to bottom: motion-hold, breathe, strip (then any old row
 kept), smart-compact, agents, goal-meter, here, queue, next, images, then any
 other plugin's row in the order received.
+
+## The band's background
+
+Every row above the prompt, the strip's and every other mod's, is drawn on
+one background colour, so it is plain where the conversation ends. The
+default is `moss` (`#18271d`).
+
+- `/strip band <shade>` changes it at once. The shades: `black` `#0b0b0f`,
+  `crust` `#11111b`, `mantle` `#181825`, `raised` `#24273a`, `navy`
+  `#16203a`, `plum` `#241b36`, `teal` `#12262b`, `moss` `#18271d` and `cocoa`
+  `#2a1f1d`. `/strip band #rrggbb` takes any other colour, `/strip band off`
+  draws none, and `/strip band` alone says which it is.
+- The choice is kept in the mod's store and wins over the `bandColor` option
+  at the next start.
+- The colour fills each row to the full width. The engine's own `[-]` mark
+  at the right end of the first row stays on the terminal's background.
+- The pills are drawn in `#313244`: a band of that colour, or of one close
+  to it, swallows them, so it has no name here.
+- Nothing is coloured on a survey, on another surface or while the band has
+  no row. The band is coloured also when the strip drew no row of its own.
+- A wrapper the engine refuses outright is passed over, and the band is
+  drawn as it came (seen in a live session with a wrapper that also set a
+  width). The wrapper also counts toward the size the engine allows the
+  band's tree: on a band already at that limit the bottom rows can be left
+  out. `/strip band off` takes the wrapper away.
 
 ## Panes without a fill
 
@@ -152,6 +178,7 @@ What it cannot show:
 | --- | --- | --- |
 | `rows` | `hide`, `show` | `hide` |
 | `transparentPanes` | on, off | on |
+| `bandColor` | a shade's name, `#rrggbb`, `off` | `moss` |
 
 ## Font
 
@@ -174,7 +201,7 @@ claude plugin install strip@zehui-mods --scope user
 - Row key `zm-10-strip`; pill buttons `sp-<pill>`; the working pill `sp-work`.
 - State (`types/index.d.ts`): `usage`, `steps`, `last`, `sel`, `turnAt`,
   `now`, `clearedAt`, `health`, `isShowingRows`, `isPanesClear`,
-  `cacheMinutes`. The fields read from other mods are typed in
+  `cacheMinutes`, `bandColor`. The fields read from other mods are typed in
   `types/peer.d.ts`.
 - Another mod's command is run from a timer, never inside a hook; the session
   runs it once idle. A command that is not in the session is a toast.

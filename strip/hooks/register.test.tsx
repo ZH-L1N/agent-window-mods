@@ -72,6 +72,10 @@ const OTHER: Plugin = {
 }
 const openOther = ($: Engine, pane: Record<string, unknown>) => $.command.run({ command: 'other-open', args: JSON.stringify(pane) } as never)
 
+/** The colour of the Box that carries the band's background in a mounted list; undefined when no Box has one. */
+const bandFill = async (ui: { findAll: (q: { type: string }) => Promise<{ props: Record<string, unknown> }[]> }): Promise<unknown> =>
+  (await ui.findAll({ type: 'Box' })).find(b => b.props.backgroundColor !== undefined)?.props.backgroundColor
+
 const COMMANDS = ['motion', 'compact-offer', 'cache-clock', 'tests', 'agents-info', 'q', 'peer-alarm', 'sys']
 const BAND = ['sys', 'token-weather', 'handoff', 'cache-clock', 'strip', 'next', 'agents']
 
@@ -579,6 +583,110 @@ describe('strip', () => {
     ui = await mountList($, without.map(row))
     expect(lastList(w)).toEqual(without)
     expect(await ui.find({ type: 'Text', text: 'sys' })).toBeDefined()
+    await ui.unmount()
+  })
+
+  test('the band background', async ($, on) => {
+    const w = await world($, on, { peers: LIVE })
+    await w.start()
+    // The default shade, around the arranged rows.
+    let ui = await mountList($, BAND.map(row))
+    expect(await bandFill(ui)).toBe('#18271d')
+    expect(lastList(w)).toEqual(['strip', 'agents', 'next'])
+    expect(await ui.find({ type: 'Text', text: 'agents' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: 'sys' })).toBeUndefined()
+    await ui.unmount()
+    expect(await w.strip('band')).toBe('Band background: moss #18271d, behind every row (/strip band off).')
+    expect(await w.strip('sources')).toContain('Band background: moss #18271d')
+    // Also when the strip drew no row: the band is coloured and nothing is moved.
+    const without = BAND.filter(p => p !== 'strip')
+    ui = await mountList($, without.map(row))
+    expect(await bandFill(ui)).toBe('#18271d')
+    expect(lastList(w)).toEqual(without)
+    expect(await ui.find({ type: 'Text', text: 'sys' })).toBeDefined()
+    await ui.unmount()
+    // Never on a survey, on another surface, or around no row.
+    ui = await mountList($, BAND.map(row), true)
+    expect(await bandFill(ui)).toBeUndefined()
+    expect(lastList(w)).toEqual(BAND)
+    await ui.unmount()
+    ui = await mountList($, BAND.map(row), false, 'desktop')
+    expect(await bandFill(ui)).toBeUndefined()
+    await ui.unmount()
+    ui = await mountList($, [])
+    expect(await bandFill(ui)).toBeUndefined()
+    await ui.unmount()
+  })
+
+  test('/strip band', async ($, on) => {
+    const w = await world($, on, { peers: LIVE })
+    await w.start()
+    expect(await w.strip('band cocoa')).toBe('Band background: cocoa #2a1f1d, behind every row (/strip band off).')
+    expect(w.store.get('band')).toBe('cocoa')
+    let ui = await mountList($, BAND.map(row))
+    expect(await bandFill(ui)).toBe('#2a1f1d')
+    await ui.unmount()
+    // Any other colour, in any letter case.
+    expect(await w.strip('band #ABCDEF')).toBe('Band background: #abcdef, behind every row (/strip band off).')
+    expect(w.store.get('band')).toBe('#abcdef')
+    ui = await mountList($, BAND.map(row))
+    expect(await bandFill(ui)).toBe('#abcdef')
+    await ui.unmount()
+    expect(await w.strip('band off')).toBe('Band background: none (/strip band <shade | #rrggbb>).')
+    expect(w.store.get('band')).toBe('off')
+    ui = await mountList($, BAND.map(row))
+    expect(await bandFill(ui)).toBeUndefined()
+    // The rows are arranged as before.
+    expect(lastList(w)).toEqual(['strip', 'agents', 'next'])
+    expect(await ui.find({ type: 'Text', text: 'agents' })).toBeDefined()
+    await ui.unmount()
+    // What is no shade and no colour changes nothing.
+    expect(await w.strip('band sideways')).toContain('Usage: /strip band')
+    expect(await w.strip('band surface')).toContain('Usage: /strip band')
+    expect(await w.strip('band #12345')).toContain('Usage: /strip band')
+    expect(w.store.get('band')).toBe('off')
+    expect(await w.strip('band')).toContain('none')
+  })
+
+  test('the bandColor option', { options: { rows: 'hide', transparentPanes: true, bandColor: 'navy' } }, async ($, on) => {
+    const w = await world($, on, { peers: LIVE })
+    await w.start()
+    const ui = await mountList($, BAND.map(row))
+    expect(await bandFill(ui)).toBe('#16203a')
+    await ui.unmount()
+    expect(await w.strip('band')).toContain('navy #16203a')
+  })
+
+  test('the bandColor option off draws none', { options: { rows: 'hide', transparentPanes: true, bandColor: 'off' } }, async ($, on) => {
+    const w = await world($, on, { peers: LIVE })
+    await w.start()
+    const ui = await mountList($, BAND.map(row))
+    expect(await bandFill(ui)).toBeUndefined()
+    expect(lastList(w)).toEqual(['strip', 'agents', 'next'])
+    await ui.unmount()
+  })
+
+  test('a stored band choice wins over the option', { options: { rows: 'hide', transparentPanes: true, bandColor: 'navy' } }, async ($, on) => {
+    const w = await world($, on, { peers: LIVE, stored: { band: 'crust' } })
+    await w.start()
+    const ui = await mountList($, BAND.map(row))
+    expect(await bandFill(ui)).toBe('#11111b')
+    await ui.unmount()
+  })
+
+  test('a stored band choice that does not read falls back to the option', { options: { rows: 'hide', transparentPanes: true, bandColor: '#445566' } }, async ($, on) => {
+    const w = await world($, on, { peers: LIVE, stored: { band: 'a shade that is gone' } })
+    await w.start()
+    const ui = await mountList($, BAND.map(row))
+    expect(await bandFill(ui)).toBe('#445566')
+    await ui.unmount()
+  })
+
+  test('a bandColor option that does not read falls back to the default', { options: { rows: 'hide', transparentPanes: true, bandColor: 'sideways' } }, async ($, on) => {
+    const w = await world($, on, { peers: LIVE })
+    await w.start()
+    const ui = await mountList($, BAND.map(row))
+    expect(await bandFill(ui)).toBe('#18271d')
     await ui.unmount()
   })
 
