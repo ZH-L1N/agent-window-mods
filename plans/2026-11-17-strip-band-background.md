@@ -85,3 +85,4 @@ every case of 0.1.0 as before when the background is off, and calls
 
 | Step | Commit | Note |
 | --- | --- | --- |
+| strip 0.1.1 | 03d28ea | Landed 2026-11-17 12:59, pushed and installed (0.1.0 to 0.1.1). 105 tests. One review: four low findings, all in documents, fixed before landing. |
